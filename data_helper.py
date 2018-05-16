@@ -18,19 +18,19 @@ def map_label(train_label_path, new_label_map_path):
   return label_map
 
 
-def move_train_data(train_data_folder, train_label_path, label_map):
-  print('moving train data:')
-  with open(train_label_path, encoding='utf-8') as f:
+def move_data(data_folder, label_path, label_map, tag):
+  print('moving %s data:' % tag)
+  with open(label_path, encoding='utf-8') as f:
     lines = f.readlines()
     count = 0
     for line in lines:
       img_name, label, _ = line.strip().split()
       new_label = label_map[label]
-      new_label_folder = os.path.join(train_data_folder, str(new_label))
+      new_label_folder = os.path.join(data_folder, str(new_label))
       if not os.path.exists(new_label_folder):
         os.mkdir(new_label_folder)
       try:
-        shutil.move(os.path.join(train_data_folder, img_name + '.jpg'),
+        shutil.move(os.path.join(data_folder, img_name + '.jpg'),
                     os.path.join(new_label_folder, img_name + '.jpg'))
       except:
         pass
@@ -44,7 +44,7 @@ def data_augmentation(train_data_folder,
                       balanced_data=False):
   """
   function: transformation function
-  balanced_data: 
+  balanced_data:
   :return:
   """
   pass
@@ -63,4 +63,5 @@ new_label_map_path = os.path.join(data_folder, 'new_label_map.txt')
 
 if __name__ == '__main__':
   label_map = map_label(train_label_path, new_label_map_path)
-  move_train_data(train_data_folder, train_label_path, label_map)
+  move_data(train_data_folder, train_label_path, label_map, tag='train')
+  move_data(valid_data_folder, valid_label_path, label_map, tag='valid')
