@@ -1,8 +1,8 @@
 import os
 import random
 import shutil
-import tensorflow as tf
-from PIL import Image
+import numpy as np
+from PIL import Image, ImageEnhance
 
 
 def map_label(train_label_path, new_label_map_path):
@@ -56,34 +56,50 @@ def data_augmentation(train_data_folder, n_classes,
   balanced_data:
   :return:
   """
-  sess_config = tf.ConfigProto()
-  sess_config.gpu_options.allow_growth = True
-  with tf.Session(config=sess_config) as sess:
-    for category in range(n_classes):
-      cur_folder = os.path.join(train_data_folder, str(category))
-      aug_save_folder = os.path.join(cur_folder, 'aug')
-      if not os.path.exists(aug_save_folder):
-        os.makedirs(aug_save_folder)
+  print('data augmentation:')
+  for category in range(n_classes):
+    cur_folder = os.path.join(train_data_folder, str(category))
+    aug_save_folder = os.path.join(cur_folder, 'aug')
+    if not os.path.exists(aug_save_folder):
+      os.makedirs(aug_save_folder)
 
-      for file in os.listdir(cur_folder):
-        if file == 'aug':
-          continue
-        image_raw_data = tf.gfile.FastGFile(os.path.join(cur_folder, file), 'rb').read()
-        img_data = tf.image.decode_jpeg(image_raw_data)
+    for file in os.listdir(cur_folder):
+      if file == 'aug':
+        continue
 
-        filename = file[:file.index('.')]
-        save_img(tf.image.flip_left_right(img_data).eval(),
-                 os.path.join(aug_save_folder, filename + '_aug_flip.jpg'))
-        save_img(tf.image.transpose_image(img_data).eval(),
-                 os.path.join(aug_save_folder, filename + '_aug_transpose.jpg'))
-        save_img(tf.image.random_brightness(img_data, max_delta=0.2).eval(),
-                 os.path.join(aug_save_folder, filename + '_aug_brightness.jpg'))
-        save_img(tf.image.adjust_contrast(img_data, random.uniform(-3, 3)).eval(),
-                 os.path.join(aug_save_folder, filename + '_aug_contrast.jpg'))
-        save_img(tf.image.random_hue(img_data, 0.3).eval(),
-                 os.path.join(aug_save_folder, filename + '_aug_hue.jpg'))
-        save_img(tf.image.adjust_saturation(img_data, random.uniform(-5, 5)).eval(),
-                 os.path.join(aug_save_folder, filename + '_aug_saturation.jpg'))
+      filename = file[:file.index('.')]
+
+      img = Image.open(os.path.join(cur_folder, file), mode="r")
+
+      # flip left right
+      img.transpose(Image.FLIP_LEFT_RIGHT).save(os.path.join(aug_save_folder, filename + '_aug_flip.jpg'))
+
+      img.transpose(Image.ROTATE_270).transpose(Image.FLIP_LEFT_RIGHT).save(
+        os.path.join(aug_save_folder, filename + '_aug_transpose.jpg'))
+
+      # saturation
+      random_factor = np.random.randint(0, 31) / 10.
+      ImageEnhance.Color(img).enhance(random_factor).save(
+        os.path.join(aug_save_folder, filename + '_aug_saturation.jpg'))
+
+      # brightness
+      random_factor = np.random.randint(10, 21) / 10.
+      ImageEnhance.Brightness(img).enhance(random_factor).save(
+        os.path.join(aug_save_folder, filename + '_aug_brightness.jpg'))
+
+      # contrast
+      random_factor = np.random.randint(10, 21) / 10.
+      ImageEnhance.Contrast(img).enhance(random_factor).save(
+        os.path.join(aug_save_folder, filename + '_aug_contrast.jpg'))
+
+      # sharpness
+      random_factor = np.random.randint(0, 31) / 10.
+      ImageEnhance.Sharpness(img).enhance(random_factor).save(
+        os.path.join(aug_save_folder, filename + '_aug_sharp.jpg'))
+
+    if category % 10 == 0:
+      print(round(category / n_classes * 100, 1), '%')
+  print('100 %')
 
 
 data_folder = r'D:\DeeplearningData\Dog identification'
@@ -102,4 +118,4 @@ if __name__ == '__main__':
   # move_data(train_data_folder, train_label_path, label_map, tag='train')
   # move_data(valid_data_folder, valid_label_path, label_map, tag='valid')
 
-  data_augmentation(train_data_folder, n_classes=10, function=None, balanced_data=False)
+  data_augmentation(train_data_folder, n_classes=100, function=None, balanced_data=False)

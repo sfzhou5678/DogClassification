@@ -55,7 +55,6 @@ def prepare_cache(train_data_folder, cache_folder,
             if not os.path.exists(bottleneck_path):
               image_path = os.path.join(aug_folder_path, aug_file)
               image_data = load_image(image_path)
-
               bottleneck_values = get_bottleneck(sess, image_data, jpeg_data_tensor, bottleneck_tensor)
 
               pickle_dump(bottleneck_values, bottleneck_path)
@@ -65,19 +64,18 @@ def prepare_cache(train_data_folder, cache_folder,
         if not os.path.exists(bottleneck_path):
           image_path = os.path.join(cur_folder_path, file)
           image_data = load_image(image_path)
-
           bottleneck_values = get_bottleneck(sess, image_data, jpeg_data_tensor, bottleneck_tensor)
 
           pickle_dump(bottleneck_values, bottleneck_path)
       if i % 10 == 0:
         print(round((i / n_classes) * 100, 0), '%')
-    print('100%')
+    print('100 %')
 
 
 cache_file_dict = {}
 
 
-def get_data_batch(batch_size, n_classes, cache_folder):
+def get_data_batch(batch_size, n_classes, cache_folder, use_aug=True):
   bottlenecks = []
   labels = []
   global cache_file_dict
@@ -87,10 +85,11 @@ def get_data_batch(batch_size, n_classes, cache_folder):
       files = os.listdir(os.path.join(cache_folder, str(category)))
       for i in range(len(files)):
         if files[i] == 'aug':
-          aug_files = os.listdir(os.path.join(cache_folder, str(category), 'aug'))
-          aug_files = [os.path.join('aug', aug_file) for aug_file in aug_files]
           files.remove('aug')
-          files += aug_files
+          if use_aug:
+            aug_files = os.listdir(os.path.join(cache_folder, str(category), 'aug'))
+            aug_files = [os.path.join('aug', aug_file) for aug_file in aug_files]
+            files += aug_files
           break
       cache_file_dict[(cache_folder, category)] = files
     else:
@@ -108,40 +107,70 @@ def get_data_batch(batch_size, n_classes, cache_folder):
 
 
 def train(config, train_cache_folder, valid_cache_folder):
-  initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
-  with tf.name_scope('Train'):
-    with tf.variable_scope("Model", reuse=None, initializer=initializer):
-      train_model = TransferModel(config=config, is_train=True)
+  g_new_layers = tf.Graph()
+  with g_new_layers.as_default():
+    bottleneck_input = tf.placeholder(tf.float32, [None, config.bottleneck_tensor_size],
+                                      name='bottleneck_input')
+    labels = tf.placeholder(tf.float32, [None, config.n_classes], name='labels')
 
-  with tf.name_scope('Valid'):
-    with tf.variable_scope("Model", reuse=True):
-      valid_model = TransferModel(config=config, is_train=False)
+    # define a FC layer as the classifier,
+    # it takes as input the extracted features by pre-trained model(bottleneck_input)
+    # we only train this layer
+    with tf.name_scope('fc-layer'):
+      weights = tf.Variable(tf.truncated_normal([config.bottleneck_tensor_size, config.n_classes], stddev=0.001))
+      biases = tf.Variable(tf.zeros([config.n_classes]))
+      logits = tf.matmul(bottleneck_input, weights) + biases
+
+      final_tensor = tf.nn.softmax(logits)
+
+    # loss function & train op
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
+    loss = tf.reduce_mean(cross_entropy)
+
+    global_step = tf.contrib.framework.get_or_create_global_step()
+    learning_rate = tf.train.exponential_decay(
+      config.learning_rate,
+      global_step,
+      100,
+      0.985
+    )
+    train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
+
+    # calculate accuracy
+    with tf.name_scope('accuracy'):
+      correct_prediction = tf.equal(tf.argmax(final_tensor, 1), tf.argmax(labels, 1))
+      accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+      top5_correction_predcition = tf.nn.in_top_k(predictions=final_tensor,
+                                                  targets=tf.argmax(labels, 1),
+                                                  k=5)
+      top5_accuracy = tf.reduce_mean(tf.cast(top5_correction_predcition, tf.float32))
 
   sess_config = tf.ConfigProto()
   sess_config.gpu_options.allow_growth = True
-  with tf.Session(config=sess_config) as sess:
+  with tf.Session(graph=g_new_layers, config=sess_config) as sess:
     init = tf.global_variables_initializer()
     sess.run(init)
     # saver = tf.train.Saver()
 
     for step in range(1, 10000 + 1):
-      train_bottlenecks, train_labels = get_data_batch(config.batch_size, config.n_classes, train_cache_folder)
+      train_bottlenecks, train_labels = get_data_batch(config.batch_size, config.n_classes, train_cache_folder,
+                                                       use_aug=False)
       # sess.run(train_model.train_op,
       #          feed_dict={train_model.bottleneck_input: train_bottlenecks,
       #                     train_model.labels: train_labels})
 
       _, train_loss, train_acc, train_top5_acc = sess.run(
-        [train_model.train_op, train_model.loss, train_model.acc, train_model.top5_acc],
-        feed_dict={train_model.bottleneck_input: train_bottlenecks,
-                   train_model.labels: train_labels})
+        [train_op, loss, accuracy, top5_accuracy],
+        feed_dict={bottleneck_input: train_bottlenecks,
+                   labels: train_labels})
 
       if step % 100 == 0:
         print('train:', train_loss, train_acc, train_top5_acc)
-        #   # fixme: 考虑全拿出来？
         valid_bottlenecks, valid_labels = get_data_batch(config.batch_size * 10, config.n_classes, valid_cache_folder)
-        valid_loss, valid_acc, valid_top5_acc = sess.run([valid_model.loss, valid_model.acc, valid_model.top5_acc],
-                                                         feed_dict={valid_model.bottleneck_input: valid_bottlenecks,
-                                                                    valid_model.labels: valid_labels})
+        valid_loss, valid_acc, valid_top5_acc = sess.run([loss, accuracy, top5_accuracy],
+                                                         feed_dict={bottleneck_input: valid_bottlenecks,
+                                                                    labels: valid_labels})
         print('valid:', valid_loss, valid_acc, valid_top5_acc)
 
 
@@ -172,12 +201,12 @@ def train_resnet(layer):
   pretrained_ckpt = 'pre-trained/tensorflow-resnet-pretrained/ResNet-L%d.ckpt' % config.layer
   pretrained_meta = 'pre-trained/tensorflow-resnet-pretrained/ResNet-L%d.meta' % config.layer
 
-  config.n_classes = 10  # fixme:
-  # prepare_cache(train_data_folder, train_cache_folder,
-  #               pretrained_meta, pretrained_ckpt, config.n_classes, tag='train')
-  #
-  # prepare_cache(valid_data_folder, valid_cache_folder,
-  #               pretrained_meta, pretrained_ckpt, config.n_classes, tag='valid')
+  # config.n_classes = 10  # fixme:
+  prepare_cache(train_data_folder, train_cache_folder,
+                pretrained_meta, pretrained_ckpt, config.n_classes, tag='train')
+
+  prepare_cache(valid_data_folder, valid_cache_folder,
+                pretrained_meta, pretrained_ckpt, config.n_classes, tag='valid')
 
   # train
   train(config, train_cache_folder, valid_cache_folder)
