@@ -75,9 +75,10 @@ def prepare_cache(train_data_folder, cache_folder,
 cache_file_dict = {}
 
 
-def get_data_batch(batch_size, n_classes, cache_folder, use_aug=True):
+def get_data_batch(batch_size, n_classes, cache_folder, target_ids=None, use_aug=True):
   bottlenecks = []
   labels = []
+  weights = []
   global cache_file_dict
   for _ in range(batch_size):
     category = random.randrange(n_classes)
@@ -103,25 +104,33 @@ def get_data_batch(batch_size, n_classes, cache_folder, use_aug=True):
 
     bottlenecks.append(bottleneck)
     labels.append(ground_truth)
-  return bottlenecks, labels
+    if target_ids is None:
+      weights.append(1.0)
+    else:
+      if category in target_ids:
+        weights.append(1.0)
+      else:
+        weights.append(0.0)
+  return bottlenecks, labels, weights
 
 
-def train(config, train_cache_folder, valid_cache_folder):
-  use_focal_loss = True
+def train(config, train_cache_folder, valid_cache_folder, target_ids):
+  use_focal_loss = False
 
   transfer_graph = tf.Graph()
   with transfer_graph.as_default():
     bottleneck_input = tf.placeholder(tf.float32, [None, config.bottleneck_tensor_size],
                                       name='bottleneck_input')
     labels = tf.placeholder(tf.float32, [None, config.n_classes], name='labels')
+    data_weights = tf.placeholder(tf.float32, [None], name='data_weights')
 
     # define a FC layer as the classifier,
     # it takes as input the extracted features by pre-trained model(bottleneck_input)
     # we only train this layer
     with tf.name_scope('fc-layer'):
-      weights = tf.Variable(tf.truncated_normal([config.bottleneck_tensor_size, config.n_classes], stddev=0.001))
-      biases = tf.Variable(tf.zeros([config.n_classes]))
-      logits = tf.matmul(bottleneck_input, weights) + biases
+      fc_w = tf.Variable(tf.truncated_normal([config.bottleneck_tensor_size, config.n_classes], stddev=0.001))
+      fc_b = tf.Variable(tf.zeros([config.n_classes]))
+      logits = tf.matmul(bottleneck_input, fc_w) + fc_b
 
       final_tensor = tf.nn.softmax(logits)
 
@@ -136,17 +145,10 @@ def train(config, train_cache_folder, valid_cache_folder):
       focal_weights = tf.pow(focal_weights, 5.0)
 
       # * focal_weights
-      loss = tf.reduce_mean(tf.reduce_sum(labels * -tf.log(final_tensor), axis=-1) * focal_weights)
+      loss = tf.reduce_mean(tf.reduce_sum(labels * -tf.log(final_tensor), axis=-1) * focal_weights * data_weights)
 
     else:
-      # labeling_loss = tf.contrib.legacy_seq2seq.sequence_loss_by_example(
-      #   [labeling_logits],
-      #   [tf.reshape(self.labels, [-1])],
-      #   [tf.ones([config.batch_size * config.max_token_size], dtype=tf.float32)])
-      # self.labeling_loss = tf.reduce_mean(labeling_loss * tf.reshape(self.label_weights, [-1]))
-      #
-      cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-      loss = tf.reduce_mean(cross_entropy)
+      loss = tf.reduce_mean(tf.reduce_sum(labels * -tf.log(final_tensor), axis=-1) * data_weights)
 
     global_step = tf.contrib.framework.get_or_create_global_step()
     learning_rate = tf.train.exponential_decay(
@@ -175,8 +177,10 @@ def train(config, train_cache_folder, valid_cache_folder):
     # saver = tf.train.Saver()
 
     for step in range(1, 10000 + 1):
-      train_bottlenecks, train_labels = get_data_batch(config.batch_size, config.n_classes, train_cache_folder,
-                                                       use_aug=True)
+      train_bottlenecks, train_labels, train_weights = get_data_batch(config.batch_size, config.n_classes,
+                                                                      train_cache_folder,
+                                                                      target_ids=target_ids,
+                                                                      use_aug=False)
       # sess.run(train_model.train_op,
       #          feed_dict={train_model.bottleneck_input: train_bottlenecks,
       #                     train_model.labels: train_labels})
@@ -184,19 +188,19 @@ def train(config, train_cache_folder, valid_cache_folder):
       _, train_loss, train_acc, train_top5_acc = sess.run(
         [train_op, loss, accuracy, top5_accuracy],
         feed_dict={bottleneck_input: train_bottlenecks,
-                   labels: train_labels})
+                   labels: train_labels,
+                   data_weights: train_weights})
 
       if step % 100 == 0:
         print('train:', train_loss, train_acc, train_top5_acc)
-        valid_bottlenecks, valid_labels = get_data_batch(config.batch_size * 10, config.n_classes, valid_cache_folder)
-        valid_loss, valid_acc = sess.run([loss, accuracy],
-                                         feed_dict={bottleneck_input: valid_bottlenecks,
-                                                    labels: valid_labels})
-        print('valid:', valid_loss, valid_acc)
+
+        # total_loss = 0
+        total_acc = 0
+        total_files = 0
 
         valid_category_acc = {}
         cache_folder = valid_cache_folder
-        for category in range(config.n_classes):
+        for category in target_ids:
           valid_bottlenecks = []
           valid_labels = []
 
@@ -215,10 +219,14 @@ def train(config, train_cache_folder, valid_cache_folder):
             valid_bottlenecks.append(bottleneck)
             valid_labels.append(ground_truth)
 
-          valid_loss, valid_acc = sess.run([loss, accuracy],
-                                           feed_dict={bottleneck_input: valid_bottlenecks,
-                                                      labels: valid_labels})
+          valid_acc = sess.run(accuracy,
+                               feed_dict={bottleneck_input: valid_bottlenecks,
+                                          labels: valid_labels})
+          # total_loss += valid_loss * len(files)
+          total_acc += valid_acc * len(files)
+          total_files += len(files)
           valid_category_acc[category] = valid_acc
+        print('valid:', total_acc / total_files)
         print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
 
 
@@ -257,7 +265,7 @@ def train_resnet(layer):
   #               pretrained_meta, pretrained_ckpt, config.n_classes, tag='valid')
 
   # train
-  train(config, train_cache_folder, valid_cache_folder)
+  train(config, train_cache_folder, valid_cache_folder, target_ids=range(40, 50))
 
 
 if __name__ == '__main__':
