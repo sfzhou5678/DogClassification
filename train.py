@@ -107,6 +107,8 @@ def get_data_batch(batch_size, n_classes, cache_folder, use_aug=True):
 
 
 def train(config, train_cache_folder, valid_cache_folder):
+  use_focal_loss = True
+
   transfer_graph = tf.Graph()
   with transfer_graph.as_default():
     bottleneck_input = tf.placeholder(tf.float32, [None, config.bottleneck_tensor_size],
@@ -124,8 +126,27 @@ def train(config, train_cache_folder, valid_cache_folder):
       final_tensor = tf.nn.softmax(logits)
 
     # loss function & train op
-    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-    loss = tf.reduce_mean(cross_entropy)
+    if use_focal_loss:
+      """
+      # common loss =-log(p)
+      # focal loss = -(1-p)^2.0 * log(p)
+      """
+      ones = tf.reduce_sum(labels, axis=-1)  # labels are one-hot encoding
+      focal_weights = ones - tf.reduce_sum(final_tensor * labels, axis=-1)
+      focal_weights = tf.pow(focal_weights, 5.0)
+
+      # * focal_weights
+      loss = tf.reduce_mean(tf.reduce_sum(labels * -tf.log(final_tensor), axis=-1) * focal_weights)
+
+    else:
+      # labeling_loss = tf.contrib.legacy_seq2seq.sequence_loss_by_example(
+      #   [labeling_logits],
+      #   [tf.reshape(self.labels, [-1])],
+      #   [tf.ones([config.batch_size * config.max_token_size], dtype=tf.float32)])
+      # self.labeling_loss = tf.reduce_mean(labeling_loss * tf.reshape(self.label_weights, [-1]))
+      #
+      cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
+      loss = tf.reduce_mean(cross_entropy)
 
     global_step = tf.contrib.framework.get_or_create_global_step()
     learning_rate = tf.train.exponential_decay(
@@ -155,7 +176,7 @@ def train(config, train_cache_folder, valid_cache_folder):
 
     for step in range(1, 10000 + 1):
       train_bottlenecks, train_labels = get_data_batch(config.batch_size, config.n_classes, train_cache_folder,
-                                                       use_aug=False)
+                                                       use_aug=True)
       # sess.run(train_model.train_op,
       #          feed_dict={train_model.bottleneck_input: train_bottlenecks,
       #                     train_model.labels: train_labels})
@@ -167,11 +188,11 @@ def train(config, train_cache_folder, valid_cache_folder):
 
       if step % 100 == 0:
         print('train:', train_loss, train_acc, train_top5_acc)
-        # valid_bottlenecks, valid_labels = get_data_batch(config.batch_size * 10, config.n_classes, valid_cache_folder)
-        # valid_loss, valid_acc = sess.run([loss, accuracy],
-        #                                  feed_dict={bottleneck_input: valid_bottlenecks,
-        #                                             labels: valid_labels})
-        # print('valid:', valid_loss, valid_acc)
+        valid_bottlenecks, valid_labels = get_data_batch(config.batch_size * 10, config.n_classes, valid_cache_folder)
+        valid_loss, valid_acc = sess.run([loss, accuracy],
+                                         feed_dict={bottleneck_input: valid_bottlenecks,
+                                                    labels: valid_labels})
+        print('valid:', valid_loss, valid_acc)
 
         valid_category_acc = {}
         cache_folder = valid_cache_folder
