@@ -8,8 +8,6 @@ from Configs import *
 from data_reader import load_image
 from common_tool import pickle_load, pickle_dump
 
-from model.TransferModels import TransferModel
-
 
 def get_bottleneck(sess, image_data, image_data_tensor, bottleneck_tensor):
   bottleneck_values = sess.run(bottleneck_tensor, {image_data_tensor: image_data})
@@ -110,11 +108,11 @@ def get_data_batch(batch_size, n_classes, cache_folder, target_ids=None, use_aug
       if category in target_ids:
         weights.append(1.0)
       else:
-        weights.append(0.0)
+        weights.append(0.0001)
   return bottlenecks, labels, weights
 
 
-def train(config, train_cache_folder, valid_cache_folder, target_ids):
+def train(config, train_cache_folder, valid_cache_folder, ckpt_path, target_ids):
   use_focal_loss = False
 
   transfer_graph = tf.Graph()
@@ -174,17 +172,13 @@ def train(config, train_cache_folder, valid_cache_folder, target_ids):
   with tf.Session(graph=transfer_graph, config=sess_config) as sess:
     init = tf.global_variables_initializer()
     sess.run(init)
-    # saver = tf.train.Saver()
+    saver = tf.train.Saver()
 
     for step in range(1, 10000 + 1):
       train_bottlenecks, train_labels, train_weights = get_data_batch(config.batch_size, config.n_classes,
                                                                       train_cache_folder,
                                                                       target_ids=target_ids,
                                                                       use_aug=False)
-      # sess.run(train_model.train_op,
-      #          feed_dict={train_model.bottleneck_input: train_bottlenecks,
-      #                     train_model.labels: train_labels})
-
       _, train_loss, train_acc, train_top5_acc = sess.run(
         [train_op, loss, accuracy, top5_accuracy],
         feed_dict={bottleneck_input: train_bottlenecks,
@@ -229,6 +223,9 @@ def train(config, train_cache_folder, valid_cache_folder, target_ids):
         print('valid:', total_acc / total_files)
         print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
 
+        # save model
+        saver.save(sess, ckpt_path)
+
 
 def train_resnet(layer):
   # TODO: 移出去
@@ -245,7 +242,6 @@ def train_resnet(layer):
 
   config = ResNetConfig(train_data_folder, valid_data_folder,
                         layer=layer, batch_size=128)
-
   train_cache_folder = os.path.join(data_folder, config.model_type, 'train-cache')
   if not os.path.exists(train_cache_folder):
     os.makedirs(train_cache_folder)
@@ -265,7 +261,14 @@ def train_resnet(layer):
   #               pretrained_meta, pretrained_ckpt, config.n_classes, tag='valid')
 
   # train
-  train(config, train_cache_folder, valid_cache_folder, target_ids=range(40, 50))
+  ckpt_folder = os.path.join(data_folder, 'model-ckpt', config.model_type)
+  if not os.path.exists(ckpt_folder):
+    os.makedirs(ckpt_folder)
+
+  left=50
+  right=100
+  train(config, train_cache_folder, valid_cache_folder,
+        ckpt_path=os.path.join(ckpt_folder, 'model-[%d,%d].ckpt' % (left, right)), target_ids=range(left, right))
 
 
 if __name__ == '__main__':
