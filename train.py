@@ -107,8 +107,8 @@ def get_data_batch(batch_size, n_classes, cache_folder, use_aug=True):
 
 
 def train(config, train_cache_folder, valid_cache_folder):
-  g_new_layers = tf.Graph()
-  with g_new_layers.as_default():
+  transfer_graph = tf.Graph()
+  with transfer_graph.as_default():
     bottleneck_input = tf.placeholder(tf.float32, [None, config.bottleneck_tensor_size],
                                       name='bottleneck_input')
     labels = tf.placeholder(tf.float32, [None, config.n_classes], name='labels')
@@ -148,7 +148,7 @@ def train(config, train_cache_folder, valid_cache_folder):
 
   sess_config = tf.ConfigProto()
   sess_config.gpu_options.allow_growth = True
-  with tf.Session(graph=g_new_layers, config=sess_config) as sess:
+  with tf.Session(graph=transfer_graph, config=sess_config) as sess:
     init = tf.global_variables_initializer()
     sess.run(init)
     # saver = tf.train.Saver()
@@ -167,11 +167,38 @@ def train(config, train_cache_folder, valid_cache_folder):
 
       if step % 100 == 0:
         print('train:', train_loss, train_acc, train_top5_acc)
-        valid_bottlenecks, valid_labels = get_data_batch(config.batch_size * 10, config.n_classes, valid_cache_folder)
-        valid_loss, valid_acc, valid_top5_acc = sess.run([loss, accuracy, top5_accuracy],
-                                                         feed_dict={bottleneck_input: valid_bottlenecks,
-                                                                    labels: valid_labels})
-        print('valid:', valid_loss, valid_acc, valid_top5_acc)
+        # valid_bottlenecks, valid_labels = get_data_batch(config.batch_size * 10, config.n_classes, valid_cache_folder)
+        # valid_loss, valid_acc = sess.run([loss, accuracy],
+        #                                  feed_dict={bottleneck_input: valid_bottlenecks,
+        #                                             labels: valid_labels})
+        # print('valid:', valid_loss, valid_acc)
+
+        valid_category_acc = {}
+        cache_folder = valid_cache_folder
+        for category in range(config.n_classes):
+          valid_bottlenecks = []
+          valid_labels = []
+
+          if (cache_folder, category) not in cache_file_dict:
+            files = os.listdir(os.path.join(cache_folder, str(category)))
+            cache_file_dict[(cache_folder, category)] = files
+          else:
+            files = cache_file_dict[(cache_folder, category)]
+
+          for file in files:
+            bottleneck = pickle_load(os.path.join(cache_folder, str(category), file))
+
+            ground_truth = np.zeros(config.n_classes, dtype=np.float32)
+            ground_truth[category] = 1.0
+
+            valid_bottlenecks.append(bottleneck)
+            valid_labels.append(ground_truth)
+
+          valid_loss, valid_acc = sess.run([loss, accuracy],
+                                           feed_dict={bottleneck_input: valid_bottlenecks,
+                                                      labels: valid_labels})
+          valid_category_acc[category] = valid_acc
+        print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
 
 
 def train_resnet(layer):
@@ -202,11 +229,11 @@ def train_resnet(layer):
   pretrained_meta = 'pre-trained/tensorflow-resnet-pretrained/ResNet-L%d.meta' % config.layer
 
   # config.n_classes = 10  # fixme:
-  prepare_cache(train_data_folder, train_cache_folder,
-                pretrained_meta, pretrained_ckpt, config.n_classes, tag='train')
-
-  prepare_cache(valid_data_folder, valid_cache_folder,
-                pretrained_meta, pretrained_ckpt, config.n_classes, tag='valid')
+  # prepare_cache(train_data_folder, train_cache_folder,
+  #               pretrained_meta, pretrained_ckpt, config.n_classes, tag='train')
+  #
+  # prepare_cache(valid_data_folder, valid_cache_folder,
+  #               pretrained_meta, pretrained_ckpt, config.n_classes, tag='valid')
 
   # train
   train(config, train_cache_folder, valid_cache_folder)
