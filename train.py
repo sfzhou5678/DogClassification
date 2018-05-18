@@ -10,14 +10,14 @@ from Configs import *
 from data_reader import load_image
 from common_tool import pickle_load, pickle_dump
 
-from resnet_v2 import resnet_arg_scope, resnet_v2_50
+from resnet_v2 import resnet_arg_scope, resnet_v2_50, resnet_v2_101, resnet_v2_152
 
 slim = tf.contrib.slim
 
 
 def get_bottleneck(sess, image_data, image_data_tensor, bottleneck_tensor):
   bottleneck_values = sess.run(bottleneck_tensor, {image_data_tensor: image_data})
-  bottleneck_values = np.squeeze(bottleneck_values)
+  # bottleneck_values = np.squeeze(bottleneck_values)
 
   return bottleneck_values
 
@@ -33,19 +33,20 @@ def prepare_cache(train_data_folder, cache_folder,
 
   calc_time = 0
   save_time = 0
-  print('preparing %s cache(will take a few minutes):' % tag)
-  for i in range(n_classes):
-    cur_folder_path = os.path.join(train_data_folder, str(i))
-    if not os.path.exists(os.path.join(cache_folder, str(i))):
-      os.makedirs(os.path.join(cache_folder, str(i)))
 
-    count = 0
+  img_paths = []
+  cache_save_paths = []
+  for category in range(n_classes):
+    cur_folder_path = os.path.join(train_data_folder, str(category))
+    if not os.path.exists(os.path.join(cache_folder, str(category))):
+      os.makedirs(os.path.join(cache_folder, str(category)))
+
     for file in os.listdir(cur_folder_path):
       if file == 'aug':
         # fixme: continue
         continue
         aug_folder_path = os.path.join(cur_folder_path, 'aug')
-        aug_cache_folder_path = os.path.join(cache_folder, str(i), 'aug')
+        aug_cache_folder_path = os.path.join(cache_folder, str(category), 'aug')
         if not os.path.exists(aug_cache_folder_path):
           os.makedirs(aug_cache_folder_path)
 
@@ -53,31 +54,29 @@ def prepare_cache(train_data_folder, cache_folder,
           bottleneck_path = os.path.join(aug_cache_folder_path, aug_file) + '.pkl'
           if not os.path.exists(bottleneck_path):
             image_path = os.path.join(aug_folder_path, aug_file)
-            image_data = load_image(image_path)
-
-            bottleneck_values = get_bottleneck(sess, image_data, preprocessed_inputs, bottleneck_tensor)
-            # bottleneck_values = sess.run(bottlenecks, {preprocessed_inputs: image_data})
-
-            pickle_dump(bottleneck_values, bottleneck_path)
+            img_paths.append(image_path)
+            cache_save_paths.append(bottleneck_path)
         continue
 
-      bottleneck_path = os.path.join(cache_folder, str(i), file) + '.pkl'
+      bottleneck_path = os.path.join(cache_folder, str(category), file) + '.pkl'
       if not os.path.exists(bottleneck_path):
         image_path = os.path.join(cur_folder_path, file)
-        image_data = load_image(image_path)
+        img_paths.append(image_path)
+        cache_save_paths.append(bottleneck_path)
 
-        count += 1
-        time0 = time.time()
-        bottleneck_values = get_bottleneck(sess, image_data, preprocessed_inputs, bottleneck_tensor)
-        calc_time += time.time() - time0
-        time0 = time.time()
-        pickle_dump(bottleneck_values, bottleneck_path)
-        save_time += time.time() - time0
-        # if count % 10 == 0:
-        #   print(count, 'calc time:', calc_time, 'save time:', save_time)
-    if i % 10 == 0:
-      print(round((i / n_classes) * 100, 0), '%')
-  print('100 %')
+  if len(img_paths) > 0:
+    print('preparing %s cache(will take a few minutes):' % tag)
+    times = (len(img_paths) - 1) // batch_size + 1
+    for i in range(times):
+      image_datas = [load_image(img_path)[0] for img_path in img_paths[i * batch_size:(i + 1) * batch_size]]
+      caches = get_bottleneck(sess, image_datas, preprocessed_inputs, bottleneck_tensor)
+
+      for cache, save_path in zip(caches, cache_save_paths[i * batch_size:(i + 1) * batch_size]):
+        pickle_dump(cache, save_path)
+
+      if i % (times // 10 + 1) == 0:
+        print(round(i / times * 100, 1), '%')
+    print('100 %')
 
 
 cache_file_dict = {}
@@ -172,11 +171,6 @@ def train(config, train_cache_folder, valid_cache_folder, ckpt_path, target_ids)
       correct_prediction = tf.equal(tf.argmax(final_tensor, 1), tf.argmax(labels, 1))
       accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
-      top5_correction_predcition = tf.nn.in_top_k(predictions=final_tensor,
-                                                  targets=tf.argmax(labels, 1),
-                                                  k=5)
-      top5_accuracy = tf.reduce_mean(tf.cast(top5_correction_predcition, tf.float32))
-
   sess_config = tf.ConfigProto()
   sess_config.gpu_options.allow_growth = True
   with tf.Session(graph=transfer_graph, config=sess_config) as sess:
@@ -189,16 +183,13 @@ def train(config, train_cache_folder, valid_cache_folder, ckpt_path, target_ids)
                                                                       train_cache_folder,
                                                                       target_ids=target_ids,
                                                                       use_aug=False)
-      _, train_loss, train_acc, train_top5_acc = sess.run(
-        [train_op, loss, accuracy, top5_accuracy],
-        feed_dict={bottleneck_input: train_bottlenecks,
-                   labels: train_labels,
-                   data_weights: train_weights})
+      _, train_loss, train_acc = sess.run([train_op, loss, accuracy],
+                                          feed_dict={bottleneck_input: train_bottlenecks,
+                                                     labels: train_labels,
+                                                     data_weights: train_weights})
 
       if step % 100 == 0:
-        print('train:', train_loss, train_acc, train_top5_acc)
-
-        # total_loss = 0
+        print('train:', train_loss, train_acc)
         total_acc = 0
         total_files = 0
 
@@ -260,21 +251,16 @@ def train_resnet(layer):
   if not os.path.exists(valid_cache_folder):
     os.makedirs(valid_cache_folder)
 
-  pretrained_ckpt = 'pre-trained/tensorflow-resnet-pretrained/ResNet-L%d.ckpt' % config.layer
-  pretrained_meta = 'pre-trained/tensorflow-resnet-pretrained/ResNet-L%d.meta' % config.layer
-
-  config.n_classes = 10  # fixme:
+  config.n_classes = 100  # fixme:
   # TODO: speed up
-  arg_scope = resnet_arg_scope()
-  pretrained_model = resnet_v2_50
-  ckpt_path = r'pre-trained/tensorflow-resnet-pretrained/resnet_v2_50.ckpt'
+  arg_scope, ckpt_path, pretrained_model = get_resnet_para(layer)
   bottleneck_tensor, preprocessed_inputs, sess = get_pretrained_net(arg_scope, pretrained_model, ckpt_path)
 
   prepare_cache(train_data_folder, train_cache_folder,
-                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, tag='train', batch_size=128)
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, tag='train', batch_size=64)
 
   prepare_cache(valid_data_folder, valid_cache_folder,
-                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, tag='valid', batch_size=128)
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, tag='valid', batch_size=64)
 
   # train
   ckpt_folder = os.path.join(data_folder, 'model-ckpt', config.model_type)
@@ -282,11 +268,25 @@ def train_resnet(layer):
     os.makedirs(ckpt_folder)
 
   left = 0
-  right = 10
+  right = 100
   # .% (left, right)
   train(config, train_cache_folder, valid_cache_folder,
-        ckpt_path=os.path.join(ckpt_folder, 'model.ckpt'),
-        target_ids=range(left, right))
+        ckpt_path=os.path.join(ckpt_folder, 'model.ckpt'), target_ids=range(left, right))
+
+
+def get_resnet_para(layer):
+  arg_scope = resnet_arg_scope()
+  if layer == 50:
+    pretrained_model = resnet_v2_50
+  elif layer == 101:
+    pretrained_model = resnet_v2_101
+  elif layer == 152:
+    pretrained_model = resnet_v2_152
+  else:
+    raise Exception('error model %d' % layer)
+  ckpt_path = 'pre-trained/tensorflow-resnet-pretrained/resnet_v2_%d.ckpt' % layer
+
+  return arg_scope, ckpt_path, pretrained_model
 
 
 def get_pretrained_net(arg_scope, model, ckpt_path):
@@ -307,4 +307,4 @@ def get_pretrained_net(arg_scope, model, ckpt_path):
 
 
 if __name__ == '__main__':
-  train_resnet(layer=152)
+  train_resnet(layer=101)
