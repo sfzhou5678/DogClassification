@@ -298,10 +298,7 @@ def train(config, train_cache_folder, valid_cache_folder,
         saver.save(sess, ckpt_path)
 
 
-def train_resnet(layer, use_aug):
-  # TODO: 移出去
-  data_folder = r'D:\DeeplearningData\Dog identification'
-
+def train_resnet(data_folder, layer, use_aug):
   train_data_folder = os.path.join(data_folder, 'train')
   valid_data_folder = os.path.join(data_folder, 'test1')
 
@@ -339,10 +336,7 @@ def train_resnet(layer, use_aug):
         ckpt_path=os.path.join(ckpt_folder, 'model.ckpt'), target_ids=range(left, right))
 
 
-def train_inception(model_type, use_aug):
-  # TODO: 移出去
-  data_folder = r'D:\DeeplearningData\Dog identification'
-
+def train_inception(data_folder, model_type, use_aug):
   train_data_folder = os.path.join(data_folder, 'train')
   valid_data_folder = os.path.join(data_folder, 'test1')
 
@@ -383,5 +377,7 @@ def train_inception(model_type, use_aug):
 
 
 if __name__ == '__main__':
-  # train_resnet(layer=101, use_aug=False)
-  train_inception(model_type='inception_resnet_v2', use_aug=False)
+  data_folder = r'D:\DeeplearningData\Dog identification'
+
+  train_resnet(data_folder, layer=101, use_aug=False)
+  # train_inception(data_folder,model_type='inception_resnet_v2', use_aug=False)

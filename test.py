@@ -11,71 +11,61 @@ from common_tool import pickle_load, pickle_dump
 from model.TransferModels import TransferFCModel
 
 
-def cal_acc(config, ckpt_path_list):
-  # transfer_graph = tf.Graph()
-  # with transfer_graph.as_default():
-  #   bottleneck_input = tf.placeholder(tf.float32, [None, config.bottleneck_tensor_size],
-  #                                     name='bottleneck_input')
-  #
-  #   # define a FC layer as the classifier,
-  #   # it takes as input the extracted features by pre-trained model(bottleneck_input)
-  #   # we only train this layer
-  #   with tf.name_scope('fc-layer'):
-  #     fc_w = tf.Variable(tf.truncated_normal([config.bottleneck_tensor_size, config.n_classes], stddev=0.001))
-  #     fc_b = tf.Variable(tf.zeros([config.n_classes]))
-  #     logits = tf.matmul(bottleneck_input, fc_w) + fc_b
-  #
-  #     final_tensor = tf.nn.softmax(logits)
-  with tf.name_scope('Test'):
-    with tf.variable_scope("Model", reuse=None):
-      test_model = TransferFCModel(config, is_training=False)
+def cal_acc(info_list, n_classes):
+  valid_category_acc = {}
 
-  sess_config = tf.ConfigProto()
-  sess_config.gpu_options.allow_growth = True
-  with tf.Session(config=sess_config) as sess:
-    init = tf.global_variables_initializer()
-    sess.run(init)
-    saver = tf.train.Saver()
+  for config, idx in zip(info_list, range(len(info_list))):
+    ckpt_cache_list = info_list[config]
+    tf.reset_default_graph()
+    with tf.name_scope('Test%d' % idx):
+      with tf.variable_scope("Model", reuse=None):
+        test_model = TransferFCModel(config, is_training=False)
 
-    valid_category_acc = {}
-    for ckpt_path, cache_folder in ckpt_path_list:
-      saver.restore(sess, ckpt_path)
+    sess_config = tf.ConfigProto()
+    sess_config.gpu_options.allow_growth = True
+    with tf.Session(config=sess_config) as sess:
+      init = tf.global_variables_initializer()
+      sess.run(init)
+      saver = tf.train.Saver()
 
-      for category in range(config.n_classes):
-        valid_bottlenecks = []
-        valid_labels = []
+      for ckpt_path, cache_folder in ckpt_cache_list:
+        saver.restore(sess, ckpt_path)
 
-        files = os.listdir(os.path.join(cache_folder, str(category)))
-        for file in files:
-          bottleneck = pickle_load(os.path.join(cache_folder, str(category), file))
+        for category in range(config.n_classes):
+          valid_bottlenecks = []
+          valid_labels = []
 
-          valid_bottlenecks.append(bottleneck)
-          valid_labels.append(category)
+          files = os.listdir(os.path.join(cache_folder, str(category)))
+          for file in files:
+            bottleneck = pickle_load(os.path.join(cache_folder, str(category), file))
 
-        pred_prob = sess.run(test_model.softmax_logits,
-                             feed_dict={test_model.bottleneck_input: valid_bottlenecks})
-        if category not in valid_category_acc:
-          valid_category_acc[category] = []
-        valid_category_acc[category].append(np.array(pred_prob))
+            valid_bottlenecks.append(bottleneck)
+            valid_labels.append(category)
 
-    total_acc = 0
-    total_files = 0
-    for category in range(config.n_classes):
-      pred_prob = np.mean(valid_category_acc[category], axis=0)
+          pred_prob = sess.run(test_model.softmax_logits,
+                               feed_dict={test_model.bottleneck_input: valid_bottlenecks})
+          if category not in valid_category_acc:
+            valid_category_acc[category] = []
+          valid_category_acc[category].append(np.array(pred_prob))
 
-      pred_category = np.argmax(pred_prob, axis=-1)
-      gt_category = category
-      valid_acc = 0
-      for pred in pred_category:
-        if pred == gt_category:
-          valid_acc += 1
-      valid_acc /= len(pred_category)
+  total_acc = 0
+  total_files = 0
+  for category in range(n_classes):
+    pred_prob = np.mean(valid_category_acc[category], axis=0)
 
-      total_acc += valid_acc * len(files)
-      total_files += len(files)
-      valid_category_acc[category] = valid_acc
-    print('valid:', total_acc / total_files)
-    print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
+    pred_category = np.argmax(pred_prob, axis=-1)
+    gt_category = category
+    valid_acc = 0
+    for pred in pred_category:
+      if pred == gt_category:
+        valid_acc += 1
+    valid_acc /= len(pred_category)
+
+    total_acc += valid_acc * len(files)
+    total_files += len(files)
+    valid_category_acc[category] = valid_acc
+  print('valid:', total_acc / total_files)
+  print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
 
 
 if __name__ == '__main__':
@@ -93,7 +83,7 @@ if __name__ == '__main__':
   layer = 152
   config = ResNetConfig(layer=layer, n_classes=100, batch_size=128)
 
-  ckpt_path_list = [
+  ckpt_cache_list = [
     # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model-[0,100].ckpt'),
     #  os.path.join(data_folder, 'ResNet-50-CPU', 'valid-cache')),
     # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model.ckpt'),
@@ -104,4 +94,25 @@ if __name__ == '__main__':
     #  os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
 
   ]
-  cal_acc(config, ckpt_path_list)
+
+  info_list = {
+    # ResNet:
+    ResNetConfig(layer, n_classes=100, batch_size=128): [
+      # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model-[0,100].ckpt'),
+      #  os.path.join(data_folder, 'ResNet-50-CPU', 'valid-cache')),
+      # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model.ckpt'),
+      #  os.path.join(data_folder, 'ResNet-50', 'valid-cache')),
+      (os.path.join(data_folder, 'model-ckpt', 'ResNet-101', 'model.ckpt'),
+       os.path.join(data_folder, 'ResNet-101', 'valid-cache')),
+      # (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
+      #  os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
+    ],
+
+    ## Inception:
+    InceptionResNetConfig('inception_resnet_v2', n_classes=100, batch_size=128): [
+      (os.path.join(data_folder, 'model-ckpt', 'inception_resnet_v2', 'model.ckpt'),
+       os.path.join(data_folder, 'inception_resnet_v2', 'valid-cache')),
+    ]
+  }
+
+  cal_acc(info_list, n_classes=100)
