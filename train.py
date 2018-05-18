@@ -4,10 +4,15 @@ import time
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.contrib.slim import nets
 
 from Configs import *
 from data_reader import load_image
 from common_tool import pickle_load, pickle_dump
+
+from resnet_v2 import resnet_arg_scope, resnet_v2_50
+
+slim = tf.contrib.slim
 
 
 def get_bottleneck(sess, image_data, image_data_tensor, bottleneck_tensor):
@@ -18,69 +23,61 @@ def get_bottleneck(sess, image_data, image_data_tensor, bottleneck_tensor):
 
 
 def prepare_cache(train_data_folder, cache_folder,
-                  pretrained_meta, pretrained_ckpt,
-                  n_classes, tag):
+                  sess, preprocessed_inputs, bottleneck_tensor,
+                  n_classes, tag, batch_size=128):
   """
 
   :param train_data_folder:
   :return:
   """
-  # g = tf.Graph()
-  sess_config = tf.ConfigProto()
-  sess_config.gpu_options.allow_growth = True
-  with tf.Session(config=sess_config) as sess:
-    saver = tf.train.import_meta_graph(pretrained_meta)
-    saver.restore(sess, pretrained_ckpt)
 
-    graph = tf.get_default_graph()
-    bottleneck_tensor = graph.get_tensor_by_name("avg_pool:0")
-    jpeg_data_tensor = graph.get_tensor_by_name("images:0")
+  calc_time = 0
+  save_time = 0
+  print('preparing %s cache(will take a few minutes):' % tag)
+  for i in range(n_classes):
+    cur_folder_path = os.path.join(train_data_folder, str(i))
+    if not os.path.exists(os.path.join(cache_folder, str(i))):
+      os.makedirs(os.path.join(cache_folder, str(i)))
 
-    calc_time = 0
-    save_time = 0
-    print('preparing %s cache(will take a few minutes):' % tag)
-    for i in range(n_classes):
-      cur_folder_path = os.path.join(train_data_folder, str(i))
-      if not os.path.exists(os.path.join(cache_folder, str(i))):
-        os.makedirs(os.path.join(cache_folder, str(i)))
+    count = 0
+    for file in os.listdir(cur_folder_path):
+      if file == 'aug':
+        # fixme: continue
+        continue
+        aug_folder_path = os.path.join(cur_folder_path, 'aug')
+        aug_cache_folder_path = os.path.join(cache_folder, str(i), 'aug')
+        if not os.path.exists(aug_cache_folder_path):
+          os.makedirs(aug_cache_folder_path)
 
-      count = 0
-      for file in os.listdir(cur_folder_path):
-        if file == 'aug':
-          # fixme: continue
-          continue
-          aug_folder_path = os.path.join(cur_folder_path, 'aug')
-          aug_cache_folder_path = os.path.join(cache_folder, str(i), 'aug')
-          if not os.path.exists(aug_cache_folder_path):
-            os.makedirs(aug_cache_folder_path)
+        for aug_file in os.listdir(aug_folder_path):
+          bottleneck_path = os.path.join(aug_cache_folder_path, aug_file) + '.pkl'
+          if not os.path.exists(bottleneck_path):
+            image_path = os.path.join(aug_folder_path, aug_file)
+            image_data = load_image(image_path)
 
-          for aug_file in os.listdir(aug_folder_path):
-            bottleneck_path = os.path.join(aug_cache_folder_path, aug_file) + '.pkl'
-            if not os.path.exists(bottleneck_path):
-              image_path = os.path.join(aug_folder_path, aug_file)
-              image_data = load_image(image_path)
-              bottleneck_values = get_bottleneck(sess, image_data, jpeg_data_tensor, bottleneck_tensor)
+            bottleneck_values = get_bottleneck(sess, image_data, preprocessed_inputs, bottleneck_tensor)
+            # bottleneck_values = sess.run(bottlenecks, {preprocessed_inputs: image_data})
 
-              pickle_dump(bottleneck_values, bottleneck_path)
-          continue
+            pickle_dump(bottleneck_values, bottleneck_path)
+        continue
 
-        bottleneck_path = os.path.join(cache_folder, str(i), file) + '.pkl'
-        if not os.path.exists(bottleneck_path):
-          image_path = os.path.join(cur_folder_path, file)
-          image_data = load_image(image_path)
+      bottleneck_path = os.path.join(cache_folder, str(i), file) + '.pkl'
+      if not os.path.exists(bottleneck_path):
+        image_path = os.path.join(cur_folder_path, file)
+        image_data = load_image(image_path)
 
-          count += 1
-          time0 = time.time()
-          bottleneck_values = get_bottleneck(sess, image_data, jpeg_data_tensor, bottleneck_tensor)
-          calc_time += time.time() - time0
-          time0 = time.time()
-          pickle_dump(bottleneck_values, bottleneck_path)
-          save_time += time.time() - time0
-          if count % 10 == 0:
-            print(count, 'calc time:', calc_time, 'save time:', save_time)
-      if i % 10 == 0:
-        print(round((i / n_classes) * 100, 0), '%')
-    print('100 %')
+        count += 1
+        time0 = time.time()
+        bottleneck_values = get_bottleneck(sess, image_data, preprocessed_inputs, bottleneck_tensor)
+        calc_time += time.time() - time0
+        time0 = time.time()
+        pickle_dump(bottleneck_values, bottleneck_path)
+        save_time += time.time() - time0
+        # if count % 10 == 0:
+        #   print(count, 'calc time:', calc_time, 'save time:', save_time)
+    if i % 10 == 0:
+      print(round((i / n_classes) * 100, 0), '%')
+  print('100 %')
 
 
 cache_file_dict = {}
@@ -103,8 +100,6 @@ def get_data_batch(batch_size, n_classes, cache_folder, target_ids=None, use_aug
             aug_files = [os.path.join('aug', aug_file) for aug_file in aug_files]
             files += aug_files
           break
-
-      files=random.sample(files,len(files)//2)
       cache_file_dict[(cache_folder, category)] = files
     else:
       files = cache_file_dict[(cache_folder, category)]
@@ -270,11 +265,16 @@ def train_resnet(layer):
 
   config.n_classes = 10  # fixme:
   # TODO: speed up
+  arg_scope = resnet_arg_scope()
+  pretrained_model = resnet_v2_50
+  ckpt_path = r'pre-trained/tensorflow-resnet-pretrained/resnet_v2_50.ckpt'
+  bottleneck_tensor, preprocessed_inputs, sess = get_pretrained_net(arg_scope, pretrained_model, ckpt_path)
+
   prepare_cache(train_data_folder, train_cache_folder,
-                pretrained_meta, pretrained_ckpt, config.n_classes, tag='train')
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, tag='train', batch_size=128)
 
   prepare_cache(valid_data_folder, valid_cache_folder,
-                pretrained_meta, pretrained_ckpt, config.n_classes, tag='valid')
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, tag='valid', batch_size=128)
 
   # train
   ckpt_folder = os.path.join(data_folder, 'model-ckpt', config.model_type)
@@ -282,9 +282,28 @@ def train_resnet(layer):
     os.makedirs(ckpt_folder)
 
   left = 0
-  right = 100
+  right = 10
+  # .% (left, right)
   train(config, train_cache_folder, valid_cache_folder,
-        ckpt_path=os.path.join(ckpt_folder, 'model-[%d,%d]-random2.ckpt' % (left, right)), target_ids=range(left, right))
+        ckpt_path=os.path.join(ckpt_folder, 'model.ckpt'),
+        target_ids=range(left, right))
+
+
+def get_pretrained_net(arg_scope, model, ckpt_path):
+  preprocessed_inputs = tf.placeholder(tf.float32, [None, 224, 224, 3], 'images')
+  with slim.arg_scope(arg_scope):
+    net, end_points = model(preprocessed_inputs, is_training=False)
+  net = tf.squeeze(net, axis=[1, 2])
+  bottleneck_tensor = net
+  init_fn = slim.assign_from_checkpoint_fn(
+    ckpt_path,
+    slim.get_variables_to_restore(),
+    ignore_missing_vars=False)
+  sess_config = tf.ConfigProto()
+  sess_config.gpu_options.allow_growth = True
+  sess = tf.Session(config=sess_config)
+  init_fn(sess)
+  return bottleneck_tensor, preprocessed_inputs, sess
 
 
 if __name__ == '__main__':
