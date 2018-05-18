@@ -13,6 +13,8 @@ from common_tool import pickle_load, pickle_dump
 from resnet_v2 import resnet_arg_scope, resnet_v2_50, resnet_v2_101, resnet_v2_152
 from inception_resnet_v2 import inception_resnet_v2_arg_scope, inception_resnet_v2
 
+from model.TransferModels import TransferFCModel
+
 slim = tf.contrib.slim
 
 
@@ -230,67 +232,18 @@ def get_data_batch(batch_size, n_classes, cache_folder, target_ids=None, use_aug
 def train(config, train_cache_folder, valid_cache_folder,
           use_aug,
           ckpt_path, target_ids):
-  use_focal_loss = True
+  initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
+  with tf.name_scope('Train'):
+    with tf.variable_scope("Model", reuse=None, initializer=initializer):
+      train_model = TransferFCModel(config, is_training=True)
 
-  transfer_graph = tf.Graph()
-  with transfer_graph.as_default():
-    bottleneck_input = tf.placeholder(tf.float32, [None, config.bottleneck_tensor_size],
-                                      name='bottleneck_input')
-    labels = tf.placeholder(tf.float32, [None, config.n_classes], name='labels')
-    data_weights = tf.placeholder(tf.float32, [None], name='data_weights')
-    is_training = tf.placeholder(tf.bool)
-    # define  FC layers as the classifier,
-    # it takes as input the extracted features by pre-trained model(bottleneck_input)
-    # we only train this layers
-    with tf.name_scope('fc-layer'):
-      net = slim.fully_connected(bottleneck_input, 4096)
-      net = slim.dropout(net, 0.35, is_training=is_training)
-
-      net = slim.fully_connected(net, 2048)
-      net = slim.dropout(net, 0.5, is_training=is_training)
-
-      logits = slim.fully_connected(net, config.n_classes, activation_fn=None, scope='output_layer')
-
-      # fc_w = tf.Variable(tf.truncated_normal([config.bottleneck_tensor_size, config.n_classes], stddev=0.001))
-      # fc_b = tf.Variable(tf.zeros([config.n_classes]))
-      # logits = tf.matmul(bottleneck_input, fc_w) + fc_b
-
-      final_tensor = tf.nn.softmax(logits)
-
-    # loss function & train op
-    if use_focal_loss:
-      """
-      # common loss =-log(p)
-      # focal loss = -(1-p)^2.0 * log(p)
-      """
-      ones = tf.reduce_sum(labels, axis=-1)  # labels are one-hot encoding
-      focal_weights = ones - tf.reduce_sum(final_tensor * labels, axis=-1)
-      focal_weights = tf.pow(focal_weights, 5.0)
-
-      # * focal_weights
-      loss = tf.reduce_mean(tf.reduce_sum(labels * -tf.log(final_tensor), axis=-1) * focal_weights * data_weights)
-
-    else:
-      loss = tf.reduce_mean(tf.reduce_sum(labels * -tf.log(final_tensor), axis=-1) * data_weights)
-
-    global_step = tf.contrib.framework.get_or_create_global_step()
-    learning_rate = tf.train.exponential_decay(
-      config.learning_rate,
-      global_step,
-      100,
-      0.985
-    )
-    train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
-    # train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)
-
-    # calculate accuracy
-    with tf.name_scope('accuracy'):
-      correct_prediction = tf.equal(tf.argmax(final_tensor, 1), tf.argmax(labels, 1))
-      accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+  with tf.name_scope('Valid'):
+    with tf.variable_scope("Model", reuse=True, initializer=initializer):
+      valid_model = TransferFCModel(config, is_training=False)
 
   sess_config = tf.ConfigProto()
   sess_config.gpu_options.allow_growth = True
-  with tf.Session(graph=transfer_graph, config=sess_config) as sess:
+  with tf.Session(config=sess_config) as sess:
     init = tf.global_variables_initializer()
     sess.run(init)
     saver = tf.train.Saver()
@@ -302,11 +255,9 @@ def train(config, train_cache_folder, valid_cache_folder,
                                                                       target_ids=target_ids,
                                                                       use_aug=use_aug,
                                                                       mode='balanced')  #
-      _, train_loss, train_acc = sess.run([train_op, loss, accuracy],
-                                          feed_dict={bottleneck_input: train_bottlenecks,
-                                                     labels: train_labels,
-                                                     data_weights: train_weights,
-                                                     is_training: True})
+      _, train_loss, train_acc = sess.run([train_model.train_op, train_model.loss, train_model.accuracy],
+                                          feed_dict={train_model.bottleneck_input: train_bottlenecks,
+                                                     train_model.labels: train_labels})
 
       if step % 100 == 0:
         print('train:', train_loss, train_acc)
@@ -334,10 +285,9 @@ def train(config, train_cache_folder, valid_cache_folder,
             valid_bottlenecks.append(bottleneck)
             valid_labels.append(ground_truth)
 
-          valid_acc = sess.run(accuracy,
-                               feed_dict={bottleneck_input: valid_bottlenecks,
-                                          labels: valid_labels,
-                                          is_training: False})
+          valid_acc = sess.run(valid_model.accuracy,
+                               feed_dict={valid_model.bottleneck_input: valid_bottlenecks,
+                                          valid_model.labels: valid_labels})
           total_acc += valid_acc * len(files)
           total_files += len(files)
           valid_category_acc[category] = valid_acc

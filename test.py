@@ -8,26 +8,31 @@ from Configs import *
 from data_reader import load_image
 from common_tool import pickle_load, pickle_dump
 
+from model.TransferModels import TransferFCModel
+
 
 def cal_acc(config, ckpt_path_list):
-  transfer_graph = tf.Graph()
-  with transfer_graph.as_default():
-    bottleneck_input = tf.placeholder(tf.float32, [None, config.bottleneck_tensor_size],
-                                      name='bottleneck_input')
-
-    # define a FC layer as the classifier,
-    # it takes as input the extracted features by pre-trained model(bottleneck_input)
-    # we only train this layer
-    with tf.name_scope('fc-layer'):
-      fc_w = tf.Variable(tf.truncated_normal([config.bottleneck_tensor_size, config.n_classes], stddev=0.001))
-      fc_b = tf.Variable(tf.zeros([config.n_classes]))
-      logits = tf.matmul(bottleneck_input, fc_w) + fc_b
-
-      final_tensor = tf.nn.softmax(logits)
+  # transfer_graph = tf.Graph()
+  # with transfer_graph.as_default():
+  #   bottleneck_input = tf.placeholder(tf.float32, [None, config.bottleneck_tensor_size],
+  #                                     name='bottleneck_input')
+  #
+  #   # define a FC layer as the classifier,
+  #   # it takes as input the extracted features by pre-trained model(bottleneck_input)
+  #   # we only train this layer
+  #   with tf.name_scope('fc-layer'):
+  #     fc_w = tf.Variable(tf.truncated_normal([config.bottleneck_tensor_size, config.n_classes], stddev=0.001))
+  #     fc_b = tf.Variable(tf.zeros([config.n_classes]))
+  #     logits = tf.matmul(bottleneck_input, fc_w) + fc_b
+  #
+  #     final_tensor = tf.nn.softmax(logits)
+  with tf.name_scope('Test'):
+    with tf.variable_scope("Model", reuse=None):
+      test_model = TransferFCModel(config, is_training=False)
 
   sess_config = tf.ConfigProto()
   sess_config.gpu_options.allow_growth = True
-  with tf.Session(graph=transfer_graph, config=sess_config) as sess:
+  with tf.Session(config=sess_config) as sess:
     init = tf.global_variables_initializer()
     sess.run(init)
     saver = tf.train.Saver()
@@ -47,8 +52,8 @@ def cal_acc(config, ckpt_path_list):
           valid_bottlenecks.append(bottleneck)
           valid_labels.append(category)
 
-        pred_prob = sess.run(final_tensor,
-                             feed_dict={bottleneck_input: valid_bottlenecks})
+        pred_prob = sess.run(test_model.softmax_logits,
+                             feed_dict={test_model.bottleneck_input: valid_bottlenecks})
         if category not in valid_category_acc:
           valid_category_acc[category] = []
         valid_category_acc[category].append(np.array(pred_prob))
@@ -86,37 +91,17 @@ if __name__ == '__main__':
   new_label_map_path = os.path.join(data_folder, 'new_label_map.txt')
 
   layer = 152
-  config = ResNetConfig(train_data_folder, valid_data_folder,
-                        layer=layer, batch_size=128)
+  config = ResNetConfig(layer=layer, n_classes=100, batch_size=128)
 
   ckpt_path_list = [
-    (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model-[0,100].ckpt'),
-     os.path.join(data_folder, 'ResNet-50-CPU', 'valid-cache')),
-    (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model.ckpt'),
-     os.path.join(data_folder, 'ResNet-50', 'valid-cache')),
+    # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model-[0,100].ckpt'),
+    #  os.path.join(data_folder, 'ResNet-50-CPU', 'valid-cache')),
+    # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model.ckpt'),
+    #  os.path.join(data_folder, 'ResNet-50', 'valid-cache')),
     (os.path.join(data_folder, 'model-ckpt', 'ResNet-101', 'model.ckpt'),
      os.path.join(data_folder, 'ResNet-101', 'valid-cache')),
-    (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
-     os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
+    # (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
+    #  os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
 
-
-    # os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,100]-random1.ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,100]-random2.ckpt'),
-
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,50].ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[50,100].ckpt'),
-
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,10].ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[10,20].ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[20,30].ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[30,40].ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[40,50].ckpt'),
-    #
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[50,60].ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[60,70].ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[70,80].ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[80,90].ckpt'),
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[90,100].ckpt'),
   ]
   cal_acc(config, ckpt_path_list)
