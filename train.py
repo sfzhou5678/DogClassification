@@ -231,15 +231,15 @@ def train(config, train_cache_folder, valid_cache_folder, ckpt_path, target_ids)
 def train_resnet(layer):
   # TODO: 移出去
   data_folder = r'D:\DeeplearningData\Dog identification'
-  label_map_path = os.path.join(data_folder, 'label_name.txt')
+  # label_map_path = os.path.join(data_folder, 'label_name.txt')
 
   train_data_folder = os.path.join(data_folder, 'train')
-  train_label_path = os.path.join(data_folder, 'label_train.txt')
+  # train_label_path = os.path.join(data_folder, 'label_train.txt')
 
   valid_data_folder = os.path.join(data_folder, 'test1')
-  valid_label_path = os.path.join(data_folder, 'label_val.txt')
+  # valid_label_path = os.path.join(data_folder, 'label_val.txt')
 
-  new_label_map_path = os.path.join(data_folder, 'new_label_map.txt')
+  # new_label_map_path = os.path.join(data_folder, 'new_label_map.txt')
 
   config = ResNetConfig(train_data_folder, valid_data_folder,
                         layer=layer, batch_size=128)
@@ -253,7 +253,7 @@ def train_resnet(layer):
 
   config.n_classes = 100  # fixme:
   # TODO: speed up
-  arg_scope, ckpt_path, pretrained_model = get_resnet_para(layer)
+  arg_scope, ckpt_path, pretrained_model = get_resnet_param(layer)
   bottleneck_tensor, preprocessed_inputs, sess = get_pretrained_net(arg_scope, pretrained_model, ckpt_path)
 
   prepare_cache(train_data_folder, train_cache_folder,
@@ -274,7 +274,7 @@ def train_resnet(layer):
         ckpt_path=os.path.join(ckpt_folder, 'model.ckpt'), target_ids=range(left, right))
 
 
-def get_resnet_para(layer):
+def get_resnet_param(layer):
   arg_scope = resnet_arg_scope()
   if layer == 50:
     pretrained_model = resnet_v2_50
@@ -307,4 +307,4 @@ def get_pretrained_net(arg_scope, model, ckpt_path):
 
 
 if __name__ == '__main__':
-  train_resnet(layer=101)
+  train_resnet(layer=152)
