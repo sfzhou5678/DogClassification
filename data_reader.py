@@ -12,5 +12,3 @@ def load_image(path, size=224, batch_size=1):
   resized_img = skimage.transform.resize(crop_img, (size, size))
 
   return resized_img.reshape((batch_size, size, size, 3))
-
-

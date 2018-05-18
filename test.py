@@ -9,12 +9,11 @@ from data_reader import load_image
 from common_tool import pickle_load, pickle_dump
 
 
-def cal_acc(config, valid_cache_folder, ckpt_path_list):
+def cal_acc(config, ckpt_path_list):
   transfer_graph = tf.Graph()
   with transfer_graph.as_default():
     bottleneck_input = tf.placeholder(tf.float32, [None, config.bottleneck_tensor_size],
                                       name='bottleneck_input')
-    labels = tf.placeholder(tf.float32, [None, config.n_classes], name='labels')
 
     # define a FC layer as the classifier,
     # it takes as input the extracted features by pre-trained model(bottleneck_input)
@@ -34,8 +33,7 @@ def cal_acc(config, valid_cache_folder, ckpt_path_list):
     saver = tf.train.Saver()
 
     valid_category_acc = {}
-    cache_folder = valid_cache_folder
-    for ckpt_path in ckpt_path_list:
+    for ckpt_path, cache_folder in ckpt_path_list:
       saver.restore(sess, ckpt_path)
 
       for category in range(config.n_classes):
@@ -87,20 +85,24 @@ if __name__ == '__main__':
 
   new_label_map_path = os.path.join(data_folder, 'new_label_map.txt')
 
-  layer = 50
+  layer = 152
   config = ResNetConfig(train_data_folder, valid_data_folder,
                         layer=layer, batch_size=128)
-  valid_cache_folder = os.path.join(data_folder, config.model_type, 'valid-cache')
-  if not os.path.exists(valid_cache_folder):
-    os.makedirs(valid_cache_folder)
-
-  #
 
   ckpt_path_list = [
-    os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,100].ckpt'),
+    (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model-[0,100].ckpt'),
+     os.path.join(data_folder, 'ResNet-50-CPU', 'valid-cache')),
+    (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model.ckpt'),
+     os.path.join(data_folder, 'ResNet-50', 'valid-cache')),
+    (os.path.join(data_folder, 'model-ckpt', 'ResNet-101', 'model.ckpt'),
+     os.path.join(data_folder, 'ResNet-101', 'valid-cache')),
+    (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
+     os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
+
+
+    # os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
     # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,100]-random1.ckpt'),
     # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,100]-random2.ckpt'),
-
 
     # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,50].ckpt'),
     # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[50,100].ckpt'),
@@ -117,4 +119,4 @@ if __name__ == '__main__':
     # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[80,90].ckpt'),
     # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[90,100].ckpt'),
   ]
-  cal_acc(config, valid_cache_folder, ckpt_path_list)
+  cal_acc(config, ckpt_path_list)
