@@ -11,6 +11,7 @@ from data_reader import load_image
 from common_tool import pickle_load, pickle_dump
 
 from resnet_v2 import resnet_arg_scope, resnet_v2_50, resnet_v2_101, resnet_v2_152
+from inception_resnet_v2 import inception_resnet_v2_arg_scope, inception_resnet_v2
 
 slim = tf.contrib.slim
 
@@ -27,10 +28,21 @@ def get_resnet_param(layer):
     raise Exception('error model %d' % layer)
   ckpt_path = 'pre-trained/tensorflow-resnet-pretrained/resnet_v2_%d.ckpt' % layer
 
-  return arg_scope, ckpt_path, pretrained_model
+  return arg_scope, pretrained_model, ckpt_path
 
 
-def get_pretrained_net(arg_scope, model, ckpt_path):
+def get_inception_param(type):
+  if type == 'inception_resnet_v2':
+    arg_scope = inception_resnet_v2_arg_scope()
+    pretrained_model = inception_resnet_v2
+    ckpt_path = 'pre-trained/tensorflow-inception-pretrained/inception_resnet_v2_2016_08_30.ckpt'
+  else:
+    raise Exception('error model %s' % type)
+
+  return arg_scope, pretrained_model, ckpt_path
+
+
+def get_resnet_pretrained_net(arg_scope, model, ckpt_path):
   preprocessed_inputs = tf.placeholder(tf.float32, [None, 224, 224, 3], 'images')
   with slim.arg_scope(arg_scope):
     net, end_points = model(preprocessed_inputs, is_training=False)
@@ -47,6 +59,26 @@ def get_pretrained_net(arg_scope, model, ckpt_path):
   return bottleneck_tensor, preprocessed_inputs, sess
 
 
+def get_inception_pretrained_net(arg_scope, model, ckpt_path):
+  preprocessed_inputs = tf.placeholder(tf.float32, [None, 299, 299, 3], 'images')
+  with slim.arg_scope(arg_scope):
+    _, end_points = model(preprocessed_inputs, is_training=False)
+    net = end_points['PreLogitsFlatten']
+    # net = tf.squeeze(net, axis=[1, 2])
+    bottleneck_tensor = net
+
+    init_fn = slim.assign_from_checkpoint_fn(
+      ckpt_path,
+      slim.get_variables_to_restore(),
+      ignore_missing_vars=False)
+
+  sess_config = tf.ConfigProto()
+  sess_config.gpu_options.allow_growth = True
+  sess = tf.Session(config=sess_config)
+  init_fn(sess)
+  return bottleneck_tensor, preprocessed_inputs, sess
+
+
 def get_bottleneck(sess, image_data, image_data_tensor, bottleneck_tensor):
   bottleneck_values = sess.run(bottleneck_tensor, {image_data_tensor: image_data})
   # bottleneck_values = np.squeeze(bottleneck_values)
@@ -56,7 +88,7 @@ def get_bottleneck(sess, image_data, image_data_tensor, bottleneck_tensor):
 
 def prepare_cache(train_data_folder, cache_folder,
                   sess, preprocessed_inputs, bottleneck_tensor,
-                  n_classes,
+                  n_classes, img_size,
                   use_aug, tag, batch_size=128):
   """
 
@@ -100,7 +132,8 @@ def prepare_cache(train_data_folder, cache_folder,
     print('preparing %s cache(will take a few minutes):' % tag)
     times = (len(img_paths) - 1) // batch_size + 1
     for i in range(times):
-      image_datas = [load_image(img_path)[0] for img_path in img_paths[i * batch_size:(i + 1) * batch_size]]
+      image_datas = [load_image(img_path, size=img_size)[0] for img_path in
+                     img_paths[i * batch_size:(i + 1) * batch_size]]
       caches = get_bottleneck(sess, image_datas, preprocessed_inputs, bottleneck_tensor)
 
       for cache, save_path in zip(caches, cache_save_paths[i * batch_size:(i + 1) * batch_size]):
@@ -322,8 +355,7 @@ def train_resnet(layer, use_aug):
   train_data_folder = os.path.join(data_folder, 'train')
   valid_data_folder = os.path.join(data_folder, 'test1')
 
-  config = ResNetConfig(train_data_folder, valid_data_folder,
-                        layer=layer, batch_size=128)
+  config = ResNetConfig(layer=layer, batch_size=128, n_classes=100)
   train_cache_folder = os.path.join(data_folder, config.model_type, 'train-cache')
   if not os.path.exists(train_cache_folder):
     os.makedirs(train_cache_folder)
@@ -333,15 +365,58 @@ def train_resnet(layer, use_aug):
     os.makedirs(valid_cache_folder)
 
   # config.n_classes = 100  # fixme:
-  arg_scope, ckpt_path, pretrained_model = get_resnet_param(layer)
-  bottleneck_tensor, preprocessed_inputs, sess = get_pretrained_net(arg_scope, pretrained_model, ckpt_path)
+  arg_scope, pretrained_model, ckpt_path = get_resnet_param(layer)
+  bottleneck_tensor, preprocessed_inputs, sess = get_resnet_pretrained_net(arg_scope, pretrained_model, ckpt_path)
 
   prepare_cache(train_data_folder, train_cache_folder,
-                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes,
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, img_size=224,
                 use_aug=use_aug, tag='train', batch_size=64)
 
   prepare_cache(valid_data_folder, valid_cache_folder,
-                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes,
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, img_size=224,
+                use_aug=use_aug, tag='valid', batch_size=64)
+
+  # train
+  ckpt_folder = os.path.join(data_folder, 'model-ckpt', config.model_type)
+  if not os.path.exists(ckpt_folder):
+    os.makedirs(ckpt_folder)
+
+  left = 0
+  right = 100
+  # .% (left, right)
+  train(config, train_cache_folder, valid_cache_folder,
+        use_aug=use_aug,
+        ckpt_path=os.path.join(ckpt_folder, 'model.ckpt'), target_ids=range(left, right))
+
+
+def train_inception(model_type, use_aug):
+  # TODO: 移出去
+  data_folder = r'D:\DeeplearningData\Dog identification'
+
+  train_data_folder = os.path.join(data_folder, 'train')
+  valid_data_folder = os.path.join(data_folder, 'test1')
+
+  config = InceptionResNetConfig(model_type=model_type, n_classes=100, batch_size=128)
+  # config = ResNetConfig(train_data_folder, valid_data_folder, batch_size=128)
+
+  train_cache_folder = os.path.join(data_folder, config.model_type, 'train-cache')
+  if not os.path.exists(train_cache_folder):
+    os.makedirs(train_cache_folder)
+
+  valid_cache_folder = os.path.join(data_folder, config.model_type, 'valid-cache')
+  if not os.path.exists(valid_cache_folder):
+    os.makedirs(valid_cache_folder)
+
+  # config.n_classes = 5  # fixme:
+  arg_scope, pretrained_model, ckpt_path = get_inception_param(model_type)
+  bottleneck_tensor, preprocessed_inputs, sess = get_inception_pretrained_net(arg_scope, pretrained_model, ckpt_path)
+
+  prepare_cache(train_data_folder, train_cache_folder,
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, img_size=299,
+                use_aug=use_aug, tag='train', batch_size=64)
+
+  prepare_cache(valid_data_folder, valid_cache_folder,
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, img_size=299,
                 use_aug=use_aug, tag='valid', batch_size=64)
 
   # train
@@ -358,4 +433,5 @@ def train_resnet(layer, use_aug):
 
 
 if __name__ == '__main__':
-  train_resnet(layer=101, use_aug=False)
+  # train_resnet(layer=101, use_aug=False)
+  train_inception(model_type='inception_resnet_v2', use_aug=False)
