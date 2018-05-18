@@ -1,5 +1,6 @@
 import os
 import random
+import time
 
 import numpy as np
 import tensorflow as tf
@@ -24,10 +25,10 @@ def prepare_cache(train_data_folder, cache_folder,
   :param train_data_folder:
   :return:
   """
-  g = tf.Graph()
+  # g = tf.Graph()
   sess_config = tf.ConfigProto()
   sess_config.gpu_options.allow_growth = True
-  with tf.Session(graph=g, config=sess_config) as sess:
+  with tf.Session(config=sess_config) as sess:
     saver = tf.train.import_meta_graph(pretrained_meta)
     saver.restore(sess, pretrained_ckpt)
 
@@ -35,14 +36,19 @@ def prepare_cache(train_data_folder, cache_folder,
     bottleneck_tensor = graph.get_tensor_by_name("avg_pool:0")
     jpeg_data_tensor = graph.get_tensor_by_name("images:0")
 
+    calc_time = 0
+    save_time = 0
     print('preparing %s cache(will take a few minutes):' % tag)
     for i in range(n_classes):
       cur_folder_path = os.path.join(train_data_folder, str(i))
       if not os.path.exists(os.path.join(cache_folder, str(i))):
         os.makedirs(os.path.join(cache_folder, str(i)))
 
+      count = 0
       for file in os.listdir(cur_folder_path):
         if file == 'aug':
+          # fixme: continue
+          continue
           aug_folder_path = os.path.join(cur_folder_path, 'aug')
           aug_cache_folder_path = os.path.join(cache_folder, str(i), 'aug')
           if not os.path.exists(aug_cache_folder_path):
@@ -62,9 +68,16 @@ def prepare_cache(train_data_folder, cache_folder,
         if not os.path.exists(bottleneck_path):
           image_path = os.path.join(cur_folder_path, file)
           image_data = load_image(image_path)
-          bottleneck_values = get_bottleneck(sess, image_data, jpeg_data_tensor, bottleneck_tensor)
 
+          count += 1
+          time0 = time.time()
+          bottleneck_values = get_bottleneck(sess, image_data, jpeg_data_tensor, bottleneck_tensor)
+          calc_time += time.time() - time0
+          time0 = time.time()
           pickle_dump(bottleneck_values, bottleneck_path)
+          save_time += time.time() - time0
+          if count % 10 == 0:
+            print(count, 'calc time:', calc_time, 'save time:', save_time)
       if i % 10 == 0:
         print(round((i / n_classes) * 100, 0), '%')
     print('100 %')
@@ -90,6 +103,8 @@ def get_data_batch(batch_size, n_classes, cache_folder, target_ids=None, use_aug
             aug_files = [os.path.join('aug', aug_file) for aug_file in aug_files]
             files += aug_files
           break
+
+      files=random.sample(files,len(files)//2)
       cache_file_dict[(cache_folder, category)] = files
     else:
       files = cache_file_dict[(cache_folder, category)]
@@ -253,23 +268,24 @@ def train_resnet(layer):
   pretrained_ckpt = 'pre-trained/tensorflow-resnet-pretrained/ResNet-L%d.ckpt' % config.layer
   pretrained_meta = 'pre-trained/tensorflow-resnet-pretrained/ResNet-L%d.meta' % config.layer
 
-  # config.n_classes = 10  # fixme:
-  # prepare_cache(train_data_folder, train_cache_folder,
-  #               pretrained_meta, pretrained_ckpt, config.n_classes, tag='train')
-  #
-  # prepare_cache(valid_data_folder, valid_cache_folder,
-  #               pretrained_meta, pretrained_ckpt, config.n_classes, tag='valid')
+  config.n_classes = 10  # fixme:
+  # TODO: speed up
+  prepare_cache(train_data_folder, train_cache_folder,
+                pretrained_meta, pretrained_ckpt, config.n_classes, tag='train')
+
+  prepare_cache(valid_data_folder, valid_cache_folder,
+                pretrained_meta, pretrained_ckpt, config.n_classes, tag='valid')
 
   # train
   ckpt_folder = os.path.join(data_folder, 'model-ckpt', config.model_type)
   if not os.path.exists(ckpt_folder):
     os.makedirs(ckpt_folder)
 
-  left=50
-  right=100
+  left = 0
+  right = 100
   train(config, train_cache_folder, valid_cache_folder,
-        ckpt_path=os.path.join(ckpt_folder, 'model-[%d,%d].ckpt' % (left, right)), target_ids=range(left, right))
+        ckpt_path=os.path.join(ckpt_folder, 'model-[%d,%d]-random2.ckpt' % (left, right)), target_ids=range(left, right))
 
 
 if __name__ == '__main__':
-  train_resnet(layer=50)
+  train_resnet(layer=152)

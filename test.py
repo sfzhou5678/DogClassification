@@ -97,9 +97,13 @@ if __name__ == '__main__':
   #
 
   ckpt_path_list = [
-    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,100].ckpt'),
-    os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,50].ckpt'),
-    os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[50,100].ckpt'),
+    os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,100].ckpt'),
+    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,100]-random1.ckpt'),
+    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,100]-random2.ckpt'),
+
+
+    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,50].ckpt'),
+    # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[50,100].ckpt'),
 
     # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[0,10].ckpt'),
     # os.path.join(data_folder, 'model-ckpt', config.model_type, 'model-[10,20].ckpt'),
