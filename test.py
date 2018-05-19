@@ -81,19 +81,6 @@ if __name__ == '__main__':
   new_label_map_path = os.path.join(data_folder, 'new_label_map.txt')
 
   layer = 152
-  config = ResNetConfig(layer=layer, n_classes=100, batch_size=128)
-
-  ckpt_cache_list = [
-    # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model-[0,100].ckpt'),
-    #  os.path.join(data_folder, 'ResNet-50-CPU', 'valid-cache')),
-    # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model.ckpt'),
-    #  os.path.join(data_folder, 'ResNet-50', 'valid-cache')),
-    (os.path.join(data_folder, 'model-ckpt', 'ResNet-101', 'model.ckpt'),
-     os.path.join(data_folder, 'ResNet-101', 'valid-cache')),
-    # (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
-    #  os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
-
-  ]
 
   info_list = {
     # ResNet:
@@ -104,14 +91,20 @@ if __name__ == '__main__':
       #  os.path.join(data_folder, 'ResNet-50', 'valid-cache')),
       (os.path.join(data_folder, 'model-ckpt', 'ResNet-101', 'model.ckpt'),
        os.path.join(data_folder, 'ResNet-101', 'valid-cache')),
-      # (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
+      (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
+       os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
+      # (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'best_model-aug-balanced.ckpt'),
       #  os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
     ],
 
     ## Inception:
     InceptionResNetConfig('inception_resnet_v2', n_classes=100, batch_size=128): [
-      (os.path.join(data_folder, 'model-ckpt', 'inception_resnet_v2', 'model.ckpt'),
+      # (os.path.join(data_folder, 'model-ckpt', 'inception_resnet_v2', 'model.ckpt'),
+      #  os.path.join(data_folder, 'inception_resnet_v2', 'valid-cache')),
+
+      (os.path.join(data_folder, 'model-ckpt', 'inception_resnet_v2', 'best_model-aug-balanced.ckpt'),
        os.path.join(data_folder, 'inception_resnet_v2', 'valid-cache')),
+
     ]
   }
 
