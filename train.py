@@ -263,6 +263,8 @@ def train(config, train_cache_folder, valid_cache_folder,
     best_acc = 0
     b_count = 0
     valid_cache_file_dict = {}
+    wf = open(ckpt_path[:ckpt_path.rindex('.')] + '.txt', 'a')
+
     for step in range(1, 500000 + 1):
       train_bottlenecks, train_labels, train_weights = get_data_batch(config.batch_size, config.n_classes,
                                                                       train_cache_folder,
@@ -306,15 +308,21 @@ def train(config, train_cache_folder, valid_cache_folder,
           valid_category_acc[category] = valid_acc
         valid_acc = total_acc / total_files
         print(step, 'valid:', valid_acc)
+        wf.write(
+          '[%d %s] train: %.4f %.4f\t valid : %.4f\n' % (step, time.strftime('%m%d-%H%M', time.localtime(time.time())),
+                                                         train_loss, train_acc, valid_acc))
+        wf.flush()
         print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
         saver.save(sess, ckpt_path)
         if valid_acc > best_acc:
           saver.save(sess, best_ckpt_path)
+          best_acc = valid_acc
           b_count = 0
         else:
           b_count += 1
           if b_count > 5:
             break
+    wf.close()
 
 
 def train_resnet(data_folder, layer, use_aug, data_mode):
@@ -377,13 +385,13 @@ def train_inception(data_folder, model_type, use_aug, data_mode):
   arg_scope, pretrained_model, ckpt_path = get_inception_param(model_type)
   bottleneck_tensor, preprocessed_inputs, sess = get_inception_pretrained_net(arg_scope, pretrained_model, ckpt_path)
 
-  # prepare_cache(train_data_folder, train_cache_folder,
-  #               sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, img_size=299,
-  #               use_aug=use_aug, tag='train', batch_size=64)
-  #
-  # prepare_cache(valid_data_folder, valid_cache_folder,
-  #               sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, img_size=299,
-  #               use_aug=use_aug, tag='valid', batch_size=64)
+  prepare_cache(train_data_folder, train_cache_folder,
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, img_size=299,
+                use_aug=use_aug, tag='train', batch_size=64)
+
+  prepare_cache(valid_data_folder, valid_cache_folder,
+                sess, preprocessed_inputs, bottleneck_tensor, config.n_classes, img_size=299,
+                use_aug=use_aug, tag='valid', batch_size=64)
 
   # train
   ckpt_folder = os.path.join(data_folder, 'model-ckpt', config.model_type)
@@ -391,7 +399,7 @@ def train_inception(data_folder, model_type, use_aug, data_mode):
     os.makedirs(ckpt_folder)
 
   left = 0
-  right = 100
+  right = max(100, config.n_classes)
   # .% (left, right)
   train(config, train_cache_folder, valid_cache_folder,
         use_aug=use_aug, data_mode=data_mode,
@@ -404,5 +412,5 @@ def train_inception(data_folder, model_type, use_aug, data_mode):
 if __name__ == '__main__':
   data_folder = r'D:\DeeplearningData\Dog identification'
 
-  train_resnet(data_folder, layer=152, use_aug=True, data_mode='random')
-  # train_inception(data_folder, model_type='inception_resnet_v2', use_aug=True, data_mode='random')
+  # train_resnet(data_folder, layer=101, use_aug=True, data_mode='random')
+  train_inception(data_folder, model_type='inception_resnet_v2', use_aug=True, data_mode='random')

@@ -31,8 +31,8 @@ class TransferFCModel(object):
       learning_rate = tf.train.exponential_decay(
         config.learning_rate,
         global_step,
-        100,
-        0.985
+        5000,
+        0.98
       )
       self.train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(self.loss)
 
