@@ -88,7 +88,7 @@ def get_bottleneck(sess, image_data, image_data_tensor, bottleneck_tensor):
   return bottleneck_values
 
 
-def load_all_images(img_paths, loaded_images, size):
+def load_all_images(img_paths, loaded_images, size, batch_size):
   """
   单独开一个线程提前读取所有图片并存储到loaded_images中
   :param img_paths:
@@ -110,8 +110,9 @@ def load_all_images(img_paths, loaded_images, size):
     if cur_idx >= t:
       break
 
-    # 给缓冲池大小加上线：提前加载的文件数不能大于0.2*总文件数
-    while cur_idx - none_idx > 0.2 * t:
+    # 给缓冲池大小加上限：提前加载的文件数不能大于30 * batch_size
+    while cur_idx - none_idx > 30 * batch_size:
+      time.sleep(0.1)
       pass
 
     path = img_paths[cur_idx]
@@ -200,7 +201,7 @@ def prepare_cache(train_data_folder, cache_folder,
     loaded_images = []
     thread_list = []
     for i in range(thread_num):
-      thread_load = threading.Thread(target=load_all_images, args=(img_paths, loaded_images, img_size))
+      thread_load = threading.Thread(target=load_all_images, args=(img_paths, loaded_images, img_size, batch_size))
       thread_list.append(thread_load)
       thread_load.start()
     # endregion
