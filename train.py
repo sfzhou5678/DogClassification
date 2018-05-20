@@ -1,6 +1,7 @@
 import os
 import random
 import time
+import threading
 
 import numpy as np
 import tensorflow as tf
@@ -83,23 +84,67 @@ def get_inception_pretrained_net(arg_scope, model, ckpt_path):
 
 def get_bottleneck(sess, image_data, image_data_tensor, bottleneck_tensor):
   bottleneck_values = sess.run(bottleneck_tensor, {image_data_tensor: image_data})
-  # bottleneck_values = np.squeeze(bottleneck_values)
 
   return bottleneck_values
+
+
+def load_all_images(img_paths, loaded_images, size):
+  """
+  单独开一个线程提前读取所有图片并存储到loaded_images中
+  :param img_paths:
+  :param loaded_images:
+  :param size:
+  :return:
+  """
+  global idx_lock
+  global append_lock
+  global global_idx
+
+  t = len(img_paths)
+  while len(loaded_images) < t:
+    idx_lock.acquire()
+    cur_idx = global_idx
+    global_idx += 1
+    idx_lock.release()
+    if cur_idx >= t:
+      break
+
+    path = img_paths[cur_idx]
+    data = load_image(path, size=size)
+
+    while len(loaded_images) != cur_idx:
+      # 一个简单的spin lock
+      pass
+    append_lock.acquire()
+    loaded_images.append(data)
+    append_lock.release()
+
+
+def save_caches(caches, save_paths):
+  """
+  单独开一个线程保存cache实现加速
+  :param caches:
+  :param save_paths:
+  :return:
+  """
+  for cache, save_path in zip(caches, save_paths):
+    pickle_dump(cache, save_path)
+
+
+# 用于cache中多线程load image
+idx_lock = threading.Lock()
+append_lock = threading.Lock()
+global_idx = 0
 
 
 def prepare_cache(train_data_folder, cache_folder,
                   sess, preprocessed_inputs, bottleneck_tensor,
                   n_classes, img_size,
-                  use_aug, tag, batch_size=128):
+                  use_aug, tag, batch_size=64, thread_num=5):
   """
-
   :param train_data_folder:
   :return:
   """
-
-  calc_time = 0
-  save_time = 0
 
   img_paths = []
   cache_save_paths = []
@@ -133,17 +178,49 @@ def prepare_cache(train_data_folder, cache_folder,
   if len(img_paths) > 0:
     print('preparing %s cache(will take a few minutes):' % tag)
     times = (len(img_paths) - 1) // batch_size + 1
-    for i in range(times):
-      image_datas = [load_image(img_path, size=img_size)[0] for img_path in
-                     img_paths[i * batch_size:(i + 1) * batch_size]]
-      caches = get_bottleneck(sess, image_datas, preprocessed_inputs, bottleneck_tensor)
+    time_load_img = 0
+    time_calc_cache = 0
+    time_save = 0
 
-      for cache, save_path in zip(caches, cache_save_paths[i * batch_size:(i + 1) * batch_size]):
-        pickle_dump(cache, save_path)
+    # region ... 加速用的img缓冲池，开多线程把所有img读取到缓冲池loaded_images中
+    global idx_lock
+    global append_lock
+    global global_idx
+
+    global_idx = 0
+
+    loaded_images = []
+    thread_list = []
+    for i in range(thread_num):
+      thread_load = threading.Thread(target=load_all_images, args=(img_paths, loaded_images, img_size))
+      thread_list.append(thread_load)
+      thread_load.start()
+    # endregion
+    for i in range(times):
+      time0 = time.time()
+      while len(loaded_images) <= (i + 1) * batch_size and len(loaded_images) < len(img_paths):
+        pass
+      image_datas = loaded_images[i * batch_size:(i + 1) * batch_size]
+      time_load_img += time.time() - time0
+
+      time1 = time.time()
+      caches = get_bottleneck(sess, image_datas, preprocessed_inputs, bottleneck_tensor)
+      time_calc_cache += time.time() - time1
+
+      time2 = time.time()
+      thread_save = threading.Thread(target=save_caches,
+                                     args=(caches, cache_save_paths[i * batch_size:(i + 1) * batch_size]))
+      thread_save.start()
+      time_save += time.time() - time2
 
       if i % (times // 10 + 1) == 0:
         print(round(i / times * 100, 1), '%')
+    for thread_load in thread_list:
+      thread_load.join()
     print('100 %')
+    print('time load img:', time_load_img)
+    print('time calc cache:', time_calc_cache)
+    print('time save:', time_save)
 
 
 cache_file_dict = {}
@@ -320,7 +397,7 @@ def train(config, train_cache_folder, valid_cache_folder,
           b_count = 0
         else:
           b_count += 1
-          if b_count > 5:
+          if b_count >= 8:
             break
     wf.close()
 
@@ -381,7 +458,7 @@ def train_inception(data_folder, model_type, use_aug, data_mode):
   if not os.path.exists(valid_cache_folder):
     os.makedirs(valid_cache_folder)
 
-  # config.n_classes = 5  # fixme:
+  # config.n_classes = 10  # fixme:
   arg_scope, pretrained_model, ckpt_path = get_inception_param(model_type)
   bottleneck_tensor, preprocessed_inputs, sess = get_inception_pretrained_net(arg_scope, pretrained_model, ckpt_path)
 
