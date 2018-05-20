@@ -201,6 +201,10 @@ def prepare_cache(train_data_folder, cache_folder,
       while len(loaded_images) <= (i + 1) * batch_size and len(loaded_images) < len(img_paths):
         pass
       image_datas = loaded_images[i * batch_size:(i + 1) * batch_size]
+      # 下面这个for清除内存中的img， 防止爆内存
+      for idx in range(i * batch_size, (i + 1) * batch_size):
+        if idx < len(loaded_images):
+          loaded_images[idx] = None
       time_load_img += time.time() - time0
 
       time1 = time.time()
@@ -342,7 +346,7 @@ def train(config, train_cache_folder, valid_cache_folder,
     valid_cache_file_dict = {}
     wf = open(ckpt_path[:ckpt_path.rindex('.')] + '.txt', 'a')
 
-    for step in range(1, 500000 + 1):
+    for step in range(1, 2000000 + 1):
       train_bottlenecks, train_labels, train_weights = get_data_batch(config.batch_size, config.n_classes,
                                                                       train_cache_folder,
                                                                       target_ids=target_ids,
@@ -390,9 +394,9 @@ def train(config, train_cache_folder, valid_cache_folder,
                                                          train_loss, train_acc, valid_acc))
         wf.flush()
         print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
-        saver.save(sess, ckpt_path)
+        # saver.save(sess, ckpt_path)
         if valid_acc > best_acc:
-          saver.save(sess, best_ckpt_path)
+          # saver.save(sess, best_ckpt_path)
           best_acc = valid_acc
           b_count = 0
         else:
@@ -402,11 +406,11 @@ def train(config, train_cache_folder, valid_cache_folder,
     wf.close()
 
 
-def train_resnet(data_folder, layer, use_aug, data_mode):
+def train_resnet(data_folder, n_classes, layer, use_aug, data_mode):
   train_data_folder = os.path.join(data_folder, 'train')
   valid_data_folder = os.path.join(data_folder, 'test1')
 
-  config = ResNetConfig(layer=layer, batch_size=128, n_classes=100)
+  config = ResNetConfig(layer=layer, batch_size=128, n_classes=n_classes)
   train_cache_folder = os.path.join(data_folder, config.model_type, 'train-cache')
   if not os.path.exists(train_cache_folder):
     os.makedirs(train_cache_folder)
@@ -415,7 +419,6 @@ def train_resnet(data_folder, layer, use_aug, data_mode):
   if not os.path.exists(valid_cache_folder):
     os.makedirs(valid_cache_folder)
 
-  # config.n_classes = 100  # fixme:
   arg_scope, pretrained_model, ckpt_path = get_resnet_param(layer)
   bottleneck_tensor, preprocessed_inputs, sess = get_resnet_pretrained_net(arg_scope, pretrained_model, ckpt_path)
 
@@ -433,7 +436,7 @@ def train_resnet(data_folder, layer, use_aug, data_mode):
     os.makedirs(ckpt_folder)
 
   left = 0
-  right = 100
+  right = min(100, config.n_classes)
   # .% (left, right)
   train(config, train_cache_folder, valid_cache_folder,
         use_aug=use_aug, data_mode=data_mode,
@@ -443,11 +446,11 @@ def train_resnet(data_folder, layer, use_aug, data_mode):
         target_ids=range(left, right))
 
 
-def train_inception(data_folder, model_type, use_aug, data_mode):
+def train_inception(data_folder, n_classes, model_type, use_aug, data_mode):
   train_data_folder = os.path.join(data_folder, 'train')
   valid_data_folder = os.path.join(data_folder, 'test1')
 
-  config = InceptionResNetConfig(model_type=model_type, n_classes=100, batch_size=128)
+  config = InceptionResNetConfig(model_type=model_type, n_classes=n_classes, batch_size=128)
   # config = ResNetConfig(train_data_folder, valid_data_folder, batch_size=128)
 
   train_cache_folder = os.path.join(data_folder, config.model_type, 'train-cache')
@@ -458,7 +461,6 @@ def train_inception(data_folder, model_type, use_aug, data_mode):
   if not os.path.exists(valid_cache_folder):
     os.makedirs(valid_cache_folder)
 
-  # config.n_classes = 10  # fixme:
   arg_scope, pretrained_model, ckpt_path = get_inception_param(model_type)
   bottleneck_tensor, preprocessed_inputs, sess = get_inception_pretrained_net(arg_scope, pretrained_model, ckpt_path)
 
@@ -487,7 +489,9 @@ def train_inception(data_folder, model_type, use_aug, data_mode):
 
 
 if __name__ == '__main__':
-  data_folder = r'D:\DeeplearningData\Dog identification'
+  # data_folder = r'D:\DeeplearningData\Dog identification'
+  data_folder = r'G:\FlowerClf\resize_300_300'
 
-  # train_resnet(data_folder, layer=101, use_aug=True, data_mode='random')
-  train_inception(data_folder, model_type='inception_resnet_v2', use_aug=True, data_mode='random')
+  # train_resnet(data_folder,  n_classes=10,layer=101, use_aug=True, data_mode='random')
+  train_inception(data_folder, n_classes=100,
+                  model_type='inception_resnet_v2', use_aug=False, data_mode='random')

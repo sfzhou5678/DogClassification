@@ -1,6 +1,7 @@
 import os
 import random
 import shutil
+import time
 import numpy as np
 from PIL import Image, ImageEnhance
 
@@ -253,18 +254,22 @@ def data_augmentation(train_data_folder, size,
   :return:
   """
   print('data augmentation:')
+
   for category in range(n_classes):
     cur_folder = os.path.join(train_data_folder, str(category))
     aug_save_folder = os.path.join(cur_folder, 'aug')
     if not os.path.exists(aug_save_folder):
       os.makedirs(aug_save_folder)
 
+    time_calc = 0
+    time_save = 0
     for file in os.listdir(cur_folder):
       if file == 'aug':
         continue
 
       filename = file[:file.index('.')]
 
+      time0 = time.time()
       img = Image.open(os.path.join(cur_folder, file), mode="r")
       if size is not None:
         img = img.resize(size)
@@ -272,16 +277,22 @@ def data_augmentation(train_data_folder, size,
 
       simple_image_aug = simple_aug(img, sample_num)
       heavy_image_aug = heavy_aug(img, sample_num)
+      time_calc += time.time() - time0
 
+      time1 = time.time()
       for img, i in zip(simple_image_aug, range(len(simple_image_aug))):
         Image.fromarray(img).save(os.path.join(aug_save_folder, filename + '_simple_aug-%d.jpg' % i))
 
       for img, i in zip(heavy_image_aug, range(len(heavy_image_aug))):
         Image.fromarray(img).save(os.path.join(aug_save_folder, filename + '_heavy_aug-%d.jpg' % i))
+      time_save = time.time() - time1
+    print('time calc:', time_calc)
+    print('time save:', time_save)
 
     if category % 10 == 0:
       print(round(category / n_classes * 100, 1), '%')
   print('100 %')
+
 
 
 data_folder = r'D:\DeeplearningData\Dog identification'
@@ -300,4 +311,5 @@ if __name__ == '__main__':
   # move_data(train_data_folder, train_label_path, label_map, tag='train')
   # move_data(valid_data_folder, valid_label_path, label_map, tag='valid')
 
-  data_augmentation(train_data_folder, size=(224, 224), n_classes=100, sample_num=4)
+  train_data_folder = r'G:\FlowerClf\resize_300_300\train'
+  data_augmentation(train_data_folder, size=(300, 300), n_classes=10, sample_num=4)
