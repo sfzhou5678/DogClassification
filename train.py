@@ -399,7 +399,7 @@ def train_inception(data_folder, model_type, use_aug, data_mode):
     os.makedirs(ckpt_folder)
 
   left = 0
-  right = max(100, config.n_classes)
+  right = min(100, config.n_classes)
   # .% (left, right)
   train(config, train_cache_folder, valid_cache_folder,
         use_aug=use_aug, data_mode=data_mode,

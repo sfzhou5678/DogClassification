@@ -1,5 +1,6 @@
 import os
 import random
+import heapq
 
 import numpy as np
 import tensorflow as tf
@@ -44,6 +45,18 @@ def cal_acc(info_list, n_classes):
 
           pred_prob = sess.run(test_model.softmax_logits,
                                feed_dict={test_model.bottleneck_input: valid_bottlenecks})
+
+          # # region voting
+          # # 下面这个for是暴力的投票机制，每个pred只投给概率最大的k个结果 （测试结果表明k=5能取得比不用略好的效果，k=1的效果不如不用）
+          # k = 5
+          # for prob, i in zip(pred_prob, range(len(pred_prob))):
+          #   index = heapq.nlargest(k, range(len(prob)), prob.take)
+          #   zero = np.zeros_like(prob)
+          #   for idx in index:
+          #     zero[idx] = prob[idx]
+          #   pred_prob[i] = zero
+          # # endregion
+
           if category not in valid_category_acc:
             valid_category_acc[category] = []
           valid_category_acc[category].append(np.array(pred_prob))
