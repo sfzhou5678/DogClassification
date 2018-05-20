@@ -99,6 +99,7 @@ def load_all_images(img_paths, loaded_images, size):
   global idx_lock
   global append_lock
   global global_idx
+  global none_idx
 
   t = len(img_paths)
   while len(loaded_images) < t:
@@ -108,6 +109,10 @@ def load_all_images(img_paths, loaded_images, size):
     idx_lock.release()
     if cur_idx >= t:
       break
+
+    # 给缓冲池大小加上线：提前加载的文件数不能大于0.2*总文件数
+    while cur_idx - none_idx > 0.2 * t:
+      pass
 
     path = img_paths[cur_idx]
     data = load_image(path, size=size)
@@ -135,6 +140,7 @@ def save_caches(caches, save_paths):
 idx_lock = threading.Lock()
 append_lock = threading.Lock()
 global_idx = 0
+none_idx = 0
 
 
 def prepare_cache(train_data_folder, cache_folder,
@@ -186,8 +192,10 @@ def prepare_cache(train_data_folder, cache_folder,
     global idx_lock
     global append_lock
     global global_idx
+    global none_idx  # 记录被标记为none的数据的index
 
     global_idx = 0
+    none_idx = 0
 
     loaded_images = []
     thread_list = []
@@ -205,6 +213,7 @@ def prepare_cache(train_data_folder, cache_folder,
       for idx in range(i * batch_size, (i + 1) * batch_size):
         if idx < len(loaded_images):
           loaded_images[idx] = None
+      none_idx = (i + 1) * batch_size
       time_load_img += time.time() - time0
 
       time1 = time.time()
@@ -393,12 +402,12 @@ def train(config, train_cache_folder, valid_cache_folder,
           '[%d %s] train: %.4f %.4f\t valid : %.4f\n' % (step, time.strftime('%m%d-%H%M', time.localtime(time.time())),
                                                          train_loss, train_acc, valid_acc))
         wf.flush()
-        print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
         # saver.save(sess, ckpt_path)
         if valid_acc > best_acc:
           # saver.save(sess, best_ckpt_path)
           best_acc = valid_acc
           b_count = 0
+          print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
         else:
           b_count += 1
           if b_count >= 8:
@@ -493,5 +502,5 @@ if __name__ == '__main__':
   data_folder = r'G:\FlowerClf\resize_300_300'
 
   # train_resnet(data_folder,  n_classes=10,layer=101, use_aug=True, data_mode='random')
-  train_inception(data_folder, n_classes=100,
+  train_inception(data_folder, n_classes=997,
                   model_type='inception_resnet_v2', use_aug=False, data_mode='random')
