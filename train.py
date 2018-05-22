@@ -5,7 +5,6 @@ import threading
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib.slim import nets
 
 from Configs import *
 from data_reader import load_image
@@ -67,7 +66,6 @@ def get_inception_pretrained_net(arg_scope, model, ckpt_path):
   with slim.arg_scope(arg_scope):
     _, end_points = model(preprocessed_inputs, is_training=False)
     net = end_points['PreLogitsFlatten']
-    # net = tf.squeeze(net, axis=[1, 2])
     bottleneck_tensor = net
 
     init_fn = slim.assign_from_checkpoint_fn(
@@ -112,7 +110,6 @@ def load_all_images(img_paths, loaded_images, size, batch_size):
 
     # 给缓冲池大小加上限：提前加载的文件数不能大于30 * batch_size
     while cur_idx - none_idx > 30 * batch_size:
-      time.sleep(0.1)
       pass
 
     path = img_paths[cur_idx]
@@ -205,6 +202,7 @@ def prepare_cache(train_data_folder, cache_folder,
       thread_list.append(thread_load)
       thread_load.start()
     # endregion
+
     for i in range(times):
       time0 = time.time()
       while len(loaded_images) <= (i + 1) * batch_size and len(loaded_images) < len(img_paths):
@@ -240,7 +238,7 @@ def prepare_cache(train_data_folder, cache_folder,
 cache_file_dict = {}
 
 
-def get_data_batch(batch_size, n_classes, cache_folder, target_ids=None, use_aug=True, mode='balanced'):
+def get_data_batch(batch_size, n_classes, cache_folder, use_aug=True, mode='random'):
   """
 
   :param batch_size:
@@ -276,20 +274,11 @@ def get_data_batch(batch_size, n_classes, cache_folder, target_ids=None, use_aug
 
     datas = random.sample(cache_file_dict, batch_size)
     for category, bottleneck in datas:
-      # bottleneck = pickle_load(os.path.join(cache_folder, str(category), file_path))
-
       ground_truth = np.zeros(n_classes, dtype=np.float32)
       ground_truth[category] = 1.0
 
       bottlenecks.append(bottleneck)
       labels.append(ground_truth)
-      if target_ids is None:
-        weights.append(1.0)
-      else:
-        if category in target_ids:
-          weights.append(1.0)
-        else:
-          weights.append(0.0001)
   elif mode == 'balanced':
     for _ in range(batch_size):
       category = random.randrange(n_classes)
@@ -313,8 +302,6 @@ def get_data_batch(batch_size, n_classes, cache_folder, target_ids=None, use_aug
       else:
         datas = cache_file_dict[(cache_folder, category)]
 
-      # file = random.sample(files, 1)[0]
-      # bottleneck = pickle_load(os.path.join(cache_folder, str(category), file))
       bottleneck = random.sample(datas, 1)[0]
 
       ground_truth = np.zeros(n_classes, dtype=np.float32)
@@ -322,19 +309,12 @@ def get_data_batch(batch_size, n_classes, cache_folder, target_ids=None, use_aug
 
       bottlenecks.append(bottleneck)
       labels.append(ground_truth)
-      if target_ids is None:
-        weights.append(1.0)
-      else:
-        if category in target_ids:
-          weights.append(1.0)
-        else:
-          weights.append(0.0001)
-  return bottlenecks, labels, weights
+  return bottlenecks, labels
 
 
 def train(config, train_cache_folder, valid_cache_folder,
           use_aug, data_mode,
-          best_ckpt_path, ckpt_path, target_ids):
+          best_ckpt_path, ckpt_path):
   initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
   with tf.name_scope('Train'):
     with tf.variable_scope("Model", reuse=None, initializer=initializer):
@@ -357,11 +337,10 @@ def train(config, train_cache_folder, valid_cache_folder,
     wf = open(ckpt_path[:ckpt_path.rindex('.')] + '.txt', 'a')
 
     for step in range(1, 2000000 + 1):
-      train_bottlenecks, train_labels, train_weights = get_data_batch(config.batch_size, config.n_classes,
-                                                                      train_cache_folder,
-                                                                      target_ids=target_ids,
-                                                                      use_aug=use_aug,
-                                                                      mode=data_mode)  #
+      train_bottlenecks, train_labels = get_data_batch(config.batch_size, config.n_classes,
+                                                       train_cache_folder,
+                                                       use_aug=use_aug,
+                                                       mode=data_mode)  #
       _, train_loss, train_acc = sess.run([train_model.train_op, train_model.loss, train_model.accuracy],
                                           feed_dict={train_model.bottleneck_input: train_bottlenecks,
                                                      train_model.labels: train_labels})
@@ -373,7 +352,7 @@ def train(config, train_cache_folder, valid_cache_folder,
 
         valid_category_acc = {}
         cache_folder = valid_cache_folder
-        for category in target_ids:
+        for category in range(config.n_classes):
           valid_bottlenecks = []
           valid_labels = []
 
@@ -403,15 +382,15 @@ def train(config, train_cache_folder, valid_cache_folder,
           '[%d %s] train: %.4f %.4f\t valid : %.4f\n' % (step, time.strftime('%m%d-%H%M', time.localtime(time.time())),
                                                          train_loss, train_acc, valid_acc))
         wf.flush()
-        # saver.save(sess, ckpt_path)
+        saver.save(sess, ckpt_path)
         if valid_acc > best_acc:
-          # saver.save(sess, best_ckpt_path)
+          saver.save(sess, best_ckpt_path)
           best_acc = valid_acc
           b_count = 0
           print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
         else:
           b_count += 1
-          if b_count >= 8:
+          if b_count >= 15:
             break
     wf.close()
 
@@ -445,15 +424,11 @@ def train_resnet(data_folder, n_classes, layer, use_aug, data_mode):
   if not os.path.exists(ckpt_folder):
     os.makedirs(ckpt_folder)
 
-  left = 0
-  right = min(100, config.n_classes)
-  # .% (left, right)
   train(config, train_cache_folder, valid_cache_folder,
         use_aug=use_aug, data_mode=data_mode,
         ckpt_path=os.path.join(ckpt_folder, 'model%s%s.ckpt' % ('-aug' if use_aug else '-noaug', '-' + data_mode)),
         best_ckpt_path=os.path.join(ckpt_folder,
-                                    'best_model%s%s.ckpt' % ('-aug' if use_aug else '-noaug', '-' + data_mode)),
-        target_ids=range(left, right))
+                                    'best_model%s%s.ckpt' % ('-aug' if use_aug else '-noaug', '-' + data_mode)))
 
 
 def train_inception(data_folder, n_classes, model_type, use_aug, data_mode):
@@ -461,7 +436,6 @@ def train_inception(data_folder, n_classes, model_type, use_aug, data_mode):
   valid_data_folder = os.path.join(data_folder, 'test1')
 
   config = InceptionResNetConfig(model_type=model_type, n_classes=n_classes, batch_size=128)
-  # config = ResNetConfig(train_data_folder, valid_data_folder, batch_size=128)
 
   train_cache_folder = os.path.join(data_folder, config.model_type, 'train-cache')
   if not os.path.exists(train_cache_folder):
@@ -487,21 +461,15 @@ def train_inception(data_folder, n_classes, model_type, use_aug, data_mode):
   if not os.path.exists(ckpt_folder):
     os.makedirs(ckpt_folder)
 
-  left = 0
-  right = min(100, config.n_classes)
-  # .% (left, right)
   train(config, train_cache_folder, valid_cache_folder,
         use_aug=use_aug, data_mode=data_mode,
         ckpt_path=os.path.join(ckpt_folder, 'model%s%s.ckpt' % ('-aug' if use_aug else '-noaug', '-' + data_mode)),
         best_ckpt_path=os.path.join(ckpt_folder,
-                                    'best_model%s%s.ckpt' % ('-aug' if use_aug else '-noaug', '-' + data_mode)),
-        target_ids=range(left, right))
+                                    'best_model%s%s.ckpt' % ('-aug' if use_aug else '-noaug', '-' + data_mode)))
 
 
 if __name__ == '__main__':
-  # data_folder = r'D:\DeeplearningData\Dog identification'
-  data_folder = r'G:\FlowerClf\resize_300_300'
+  data_folder = r'Your data folder'
 
-  # train_resnet(data_folder,  n_classes=10,layer=101, use_aug=True, data_mode='random')
-  train_inception(data_folder, n_classes=997,
-                  model_type='inception_resnet_v2', use_aug=False, data_mode='random')
+  # train_resnet(data_folder,  n_classes=100,layer=152, use_aug=False, data_mode='random')
+  train_inception(data_folder, n_classes=100, model_type='inception_resnet_v2', use_aug=False, data_mode='random')
