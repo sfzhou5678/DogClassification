@@ -81,44 +81,74 @@ def cal_acc(info_list, n_classes):
   print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
 
 
+def get_info(model, model_param, use_aug, data_mode):
+  if model == 'Inception':
+    model_ckpt = os.path.join(data_folder, 'model-ckpt', '%s' % model_param,
+                              'best_model%s%s.ckpt' % (('-aug' if use_aug else '-noaug', '-' + data_mode)))
+    cache_folder = os.path.join(data_folder, '%s' % model_param, 'valid-cache')
+    return (model_ckpt, cache_folder)
+  elif model == 'ResNet':
+    model_ckpt = os.path.join(data_folder, 'model-ckpt', 'ResNet-%d' % model_param,
+                              'best_model%s%s.ckpt' % (('-aug' if use_aug else '-noaug', '-' + data_mode)))
+    cache_folder = os.path.join(data_folder, 'ResNet-%d' % model_param, 'valid-cache')
+    return (model_ckpt, cache_folder)
+  else:
+    raise Exception('error')
+
+
 if __name__ == '__main__':
-  data_folder = r'D:\DeeplearningData\Dog identification'
-  label_map_path = os.path.join(data_folder, 'label_name.txt')
+  data_folder = r'Your data folder'
 
-  train_data_folder = os.path.join(data_folder, 'train')
-  train_label_path = os.path.join(data_folder, 'label_train.txt')
-
-  valid_data_folder = os.path.join(data_folder, 'test1')
-  valid_label_path = os.path.join(data_folder, 'label_val.txt')
-
-  new_label_map_path = os.path.join(data_folder, 'new_label_map.txt')
-
-  layer = 152
-
+  ## 手动的test方法
+  # 在info list中选择要测试的模型，每个config下可以输入多个待测试的模型
+  # 最终的预测结果会是所有模型的平均
   info_list = {
-    # ResNet:
-    ResNetConfig(layer, n_classes=100, batch_size=128): [
-      # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model-[0,100].ckpt'),
-      #  os.path.join(data_folder, 'ResNet-50-CPU', 'valid-cache')),
-      # (os.path.join(data_folder, 'model-ckpt', 'ResNet-50', 'model.ckpt'),
-      #  os.path.join(data_folder, 'ResNet-50', 'valid-cache')),
-      (os.path.join(data_folder, 'model-ckpt', 'ResNet-101', 'model.ckpt'),
-       os.path.join(data_folder, 'ResNet-101', 'valid-cache')),
-      (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'model.ckpt'),
-       os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
-      # (os.path.join(data_folder, 'model-ckpt', 'ResNet-152', 'best_model-aug-balanced.ckpt'),
-      #  os.path.join(data_folder, 'ResNet-152', 'valid-cache')),
+    ## ResNet:
+    # ResNetConfig(101, n_classes=100, batch_size=128): [
+    #   get_info('ResNet', model_param=101, use_aug=True, data_mode='random'),
+    # ],
+    ResNetConfig(152, n_classes=100, batch_size=128): [
+      get_info('ResNet', model_param=152, use_aug=True, data_mode='balanced'),
+      get_info('ResNet', model_param=152, use_aug=True, data_mode='random'),
+      # get_info('ResNet', model_param=152, use_aug=False, data_mode='balanced'),
+      # get_info('ResNet', model_param=152, use_aug=False, data_mode='random'),
     ],
 
     ## Inception:
     InceptionResNetConfig('inception_resnet_v2', n_classes=100, batch_size=128): [
-      # (os.path.join(data_folder, 'model-ckpt', 'inception_resnet_v2', 'model.ckpt'),
-      #  os.path.join(data_folder, 'inception_resnet_v2', 'valid-cache')),
-
-      (os.path.join(data_folder, 'model-ckpt', 'inception_resnet_v2', 'best_model-aug-balanced.ckpt'),
-       os.path.join(data_folder, 'inception_resnet_v2', 'valid-cache')),
+      get_info('Inception', model_param='inception_resnet_v2', use_aug=True, data_mode='balanced'),
+      get_info('Inception', model_param='inception_resnet_v2', use_aug=True, data_mode='random'),
+      # get_info('Inception', model_param='inception_resnet_v2', use_aug=False, data_mode='balanced'),
+      # get_info('Inception', model_param='inception_resnet_v2', use_aug=False, data_mode='random'),
 
     ]
   }
 
   cal_acc(info_list, n_classes=100)
+
+  # ## 暴力的2模型集成测试方法：
+  # resnet_info_list = [
+  #   get_info('ResNet', model_param=152, use_aug=True, data_mode='balanced'),
+  #   get_info('ResNet', model_param=152, use_aug=True, data_mode='random'),
+  #   get_info('ResNet', model_param=152, use_aug=False, data_mode='balanced'),
+  #   get_info('ResNet', model_param=152, use_aug=False, data_mode='random')]
+  #
+  # inception_resnet_info_list = [
+  #   get_info('Inception', model_param='inception_resnet_v2', use_aug=True, data_mode='balanced'),
+  #   get_info('Inception', model_param='inception_resnet_v2', use_aug=True, data_mode='random'),
+  #   get_info('Inception', model_param='inception_resnet_v2', use_aug=False, data_mode='balanced'),
+  #   get_info('Inception', model_param='inception_resnet_v2', use_aug=False, data_mode='random'),
+  # ]
+  #
+  # for i in range(len(resnet_info_list)):
+  #   for j in range(len(inception_resnet_info_list)):
+  #     info_list = {
+  #       ResNetConfig(152, n_classes=100, batch_size=128): [
+  #         resnet_info_list[i]
+  #       ],
+  #       InceptionResNetConfig('inception_resnet_v2', n_classes=100, batch_size=128): [
+  #         inception_resnet_info_list[j]
+  #       ]
+  #     }
+  #     print(i, j)
+  #     cal_acc(info_list, n_classes=100)

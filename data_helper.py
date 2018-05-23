@@ -295,7 +295,7 @@ def data_augmentation(train_data_folder, size,
 
 
 
-data_folder = r'D:\DeeplearningData\Dog identification'
+data_folder = r'Your data folder'
 label_map_path = os.path.join(data_folder, 'label_name.txt')
 
 train_data_folder = os.path.join(data_folder, 'train')
@@ -307,9 +307,8 @@ valid_label_path = os.path.join(data_folder, 'label_val.txt')
 new_label_map_path = os.path.join(data_folder, 'new_label_map.txt')
 
 if __name__ == '__main__':
-  # label_map = map_label(train_label_path, new_label_map_path)
-  # move_data(train_data_folder, train_label_path, label_map, tag='train')
-  # move_data(valid_data_folder, valid_label_path, label_map, tag='valid')
+  label_map = map_label(train_label_path, new_label_map_path)
+  move_data(train_data_folder, train_label_path, label_map, tag='train')
+  move_data(valid_data_folder, valid_label_path, label_map, tag='valid')
 
-  train_data_folder = r'G:\FlowerClf\resize_300_300\train'
-  data_augmentation(train_data_folder, size=(300, 300), n_classes=10, sample_num=4)
+  # data_augmentation(train_data_folder, size=(300, 300), n_classes=100, sample_num=4)

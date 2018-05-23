@@ -336,7 +336,7 @@ def train(config, train_cache_folder, valid_cache_folder,
     valid_cache_file_dict = {}
     wf = open(ckpt_path[:ckpt_path.rindex('.')] + '.txt', 'a')
 
-    for step in range(1, 2000000 + 1):
+    for step in range(1, 30000 + 1):
       train_bottlenecks, train_labels = get_data_batch(config.batch_size, config.n_classes,
                                                        train_cache_folder,
                                                        use_aug=use_aug,
@@ -382,16 +382,17 @@ def train(config, train_cache_folder, valid_cache_folder,
           '[%d %s] train: %.4f %.4f\t valid : %.4f\n' % (step, time.strftime('%m%d-%H%M', time.localtime(time.time())),
                                                          train_loss, train_acc, valid_acc))
         wf.flush()
-        saver.save(sess, ckpt_path)
+        # saver.save(sess, ckpt_path)
         if valid_acc > best_acc:
-          saver.save(sess, best_ckpt_path)
+          if b_count > 0:
+            saver.save(sess, best_ckpt_path)
+            print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
           best_acc = valid_acc
-          b_count = 0
-          print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
+          # b_count = 0
         else:
           b_count += 1
-          if b_count >= 15:
-            break
+          # if b_count >= 15:
+          #   break
     wf.close()
 
 
@@ -471,5 +472,5 @@ def train_inception(data_folder, n_classes, model_type, use_aug, data_mode):
 if __name__ == '__main__':
   data_folder = r'Your data folder'
 
-  # train_resnet(data_folder,  n_classes=100,layer=152, use_aug=False, data_mode='random')
+  # train_resnet(data_folder, n_classes=100, layer=152, use_aug=False, data_mode='random')
   train_inception(data_folder, n_classes=100, model_type='inception_resnet_v2', use_aug=False, data_mode='random')

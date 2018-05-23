@@ -8,7 +8,7 @@ class ResNetConfig():
     self.model_type = 'ResNet-%d' % self.layer
 
     self.init_scale = 0.05
-    self.learning_rate = 1e-1
+    self.learning_rate = 1e-2
     self.batch_size = batch_size
     self.bottleneck_tensor_size = 2048
     self.n_classes = n_classes
