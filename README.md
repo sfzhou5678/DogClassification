@@ -159,7 +159,7 @@
 
 3. 准备cache并开始训练
 
-   从连接XXX下载预训练模型的参数pre-trained文件夹，并将其放至代码根目录，如下图：
+   从链接：https://pan.baidu.com/s/1g0UcxGzj_nY5iC9y-010GA 密码：he71 下载预训练模型的参数pre-trained文件夹，并将其放至代码根目录，如下图：
 
    ![img](imgs/pre-trained.png)
 
