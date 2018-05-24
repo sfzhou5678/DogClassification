@@ -37,7 +37,6 @@
 
    结合多个模型的分类结果可以提升分类的准确性，集成模型相较于单模型可以取得约1-3%的提升。
 
-      
 
    [**为什么ensemble会取得更好的效果**](https://www.zhihu.com/question/29036379/answer/111896096)：
 
@@ -49,9 +48,9 @@
 
    >  A: 1111111100 = 80% accuracy
    >
-   > B: 0111011101 = 70% accuracy
+   >  B: 0111011101 = 70% accuracy
    >
-   > C: 1000101111 = 60% accuracy
+   >  C: 1000101111 = 60% accuracy
 
    通过简单的ensemble （majority vote：ABC同时对一个样本进行投票，投票数大于等于2的记为1，否则为0），于是得到结果Z为: 
 
@@ -61,10 +60,13 @@
 
 1. 下载数据
 
-   连接XXX 提供了预训练模型的具体参数、原始图片及数据增强生成的图片分别经过4种预训练模型之后提的的图像特征。
+   链接：https://pan.baidu.com/s/1g0UcxGzj_nY5iC9y-010GA 密码：he71  提供了预训练模型的具体参数( pre-trained文件夹)、原始图片及数据增强生成的图片(images.zip)分别经过4种预训练模型之后提的的图像特征(模型名-cache.zip)。
 
-   下载数据后，将pre-trained文件夹放至代码根目录，如下图：
-   ![img](imgs/pre-trained.png)
+   - 下载images.zip图像包，并下载感兴趣的模型对应的图像特征(推荐Inception-ResNet或ResNet-152)。下载完成后解压至同一目录(此目录就是下文的data_folder):![img](imgs/overview.png)
+
+     ​
+
+   - 下载pre-trained文件夹并放至代码根目录，如图：![img](imgs/pre-trained.png)
 
 2. 开始训练
 
@@ -74,13 +76,13 @@
 
     训练选项有:
 
-	- use_aug : 可选值为**Ture**和**False**。它控制是否使用数据增强产生的训练数据。
-	- data_mode: 可选值为"**random**"和"**balanced**"。它控制训练时每个batch的数据来源。"**random**"模式表示从所有可用数据中随机挑选数据(每个类别被训练的次数约等于该类别数据的占比)。"**balanced**"模式表示等概率地从每个类别中挑选训练数据(每个类别被训练的次数基本相等)
+   - use_aug : 可选值为**Ture**和**False**。它控制是否使用数据增强产生的训练数据。
+   - data_mode: 可选值为"**random**"和"**balanced**"。它控制训练时每个batch的数据来源。"**random**"模式表示从所有可用数据中随机挑选数据(每个类别被训练的次数约等于该类别数据的占比)。"**balanced**"模式表示等概率地从每个类别中挑选训练数据(每个类别被训练的次数基本相等)
 
 3. 测试模型
-	
-	训练完成后，修改test.py中的data_folder并根据已训练模型的参赛配置info_list：
-	![img](imgs/test.png)
+
+   训练完成后，修改test.py中的data_folder并根据已训练模型的参赛配置info_list：
+   ![img](imgs/test.png)
 
 
 
@@ -92,33 +94,33 @@
 
 下表给出了基于预训练Inception-ResNet的网络在本次数据集上的实验结果。
 
-| 模型名称 | UseAug | DataMode | Valid-Acc |
-|:----------:|:------:|:-----:| :-----:|
-|**Inception-ResNet**| True | balanced | **0.7622** |
-|				| True |random| 0.7596 |
-|				|False | balanced| 0.7540  |
-|				|False | random|0.7426 |
+|         模型名称         | UseAug | DataMode | Valid-Acc  |
+| :------------------: | :----: | :------: | :--------: |
+| **Inception-ResNet** |  True  | balanced | **0.7622** |
+|                      |  True  |  random  |   0.7596   |
+|                      | False  | balanced |   0.7540   |
+|                      | False  |  random  |   0.7426   |
 
 
 下表给出了基于预训练ResNet-152的网络在本次数据集上的实验结果。
 
-| 模型名称 | UseAug | DataMode | Valid-Acc |
-|:----------:|:------:|:-----:| :-----:|
-|**ResNet-152**| True | balanced | **0.7458** |
-|				| True |random| 0.7443  |
-|				|False | balanced| 0.7420   |
-|				|False | random|0.7425  |
+|      模型名称      | UseAug | DataMode | Valid-Acc  |
+| :------------: | :----: | :------: | :--------: |
+| **ResNet-152** |  True  | balanced | **0.7458** |
+|                |  True  |  random  |   0.7443   |
+|                | False  | balanced |   0.7420   |
+|                | False  |  random  |   0.7425   |
 
 
 下表给出了简单集成ResNet-152和Inception-ResNet之后得到的实验结果。
 可以看到模型集成之后最高的acc从0.7622提升到了0.7716, 而且最差的两个单模型(0.7426和0.7425)集成之后也能达到0.7677的acc, 超过最佳的单模型acc(0.7622)。
 
-|IncepResNet\ResNet-152	| Aug-balanced | Aug-random | NoAug-balanced |NoAug-random|
-|:----------:|:------:|:------:| :------:| :------:|
-|**Aug-balanced**| 0.7707 | **0.7716** | 0.7686 |0.7694 |
-|**Aug-random** | 0.7695 |0.7684 |0.7661 |0.7679 |
-|**NoAug-balanced** |0.7711 |0.7706 |0.7680 |0.7687 |
-|**NoAug-random**|0.7678 |0.7712 |0.7656 |0.7677 |
+| IncepResNet\ResNet-152 | Aug-balanced | Aug-random | NoAug-balanced | NoAug-random |
+| :--------------------: | :----------: | :--------: | :------------: | :----------: |
+|    **Aug-balanced**    |    0.7707    | **0.7716** |     0.7686     |    0.7694    |
+|     **Aug-random**     |    0.7695    |   0.7684   |     0.7661     |    0.7679    |
+|   **NoAug-balanced**   |    0.7711    |   0.7706   |     0.7680     |    0.7687    |
+|    **NoAug-random**    |    0.7678    |   0.7712   |     0.7656     |    0.7677    |
 
 ## 从零开始训练
 
@@ -126,7 +128,6 @@
 
    原始数据中的"label_name.txt"包含了134种类别，虽然训练集和验证集的类别总共只有100种，但是其标签id并不是连续的，所以首先需要将数据中的标签映射至0-99。
 
-   
 
    下载链接：https://pan.baidu.com/s/1MlhMmeCM5Ta_hOsRy3jJxg 密码：2nhh 中的数据，并解压**train.tar**和**val.tar**至当前目录。
 
@@ -134,7 +135,7 @@
 
    ![img](imgs/label_map.png)
 
-2. 按标签类别移动数据
+1. 按标签类别移动数据
 
    然后执行move_data将数据移动进对应类别的文件夹中：
 
@@ -144,7 +145,7 @@
 
    ![img](imgs/move_data_res.png)
 
-3. (可选)进行数据增强
+2. (可选)进行数据增强
 
    在**data_helper.py**下配置**data_augmentation**可进行数据数据增强。
 
@@ -156,7 +157,7 @@
 
    ![img](imgs/data_aug_res.png)
 
-4. 准备cache并开始训练
+3. 准备cache并开始训练
 
    从连接XXX下载预训练模型的参数pre-trained文件夹，并将其放至代码根目录，如下图：
 

@@ -386,7 +386,7 @@ def train(config, train_cache_folder, valid_cache_folder,
         if valid_acc > best_acc:
           if b_count > 0:
             saver.save(sess, best_ckpt_path)
-            print(sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
+            print('save model:',sorted(valid_category_acc.items(), key=lambda d: d[1], reverse=True))
           best_acc = valid_acc
           # b_count = 0
         else:
